@@ -14,21 +14,19 @@
     </div>
   </body>
   <script>
-    const { reactive, effect } = Vue
-    const obj = reactive({
-      name: '243'
-    })
+    const { reactive, effect, ref } = Vue
+    const obj = ref('234')
     effect(() => {
-      document.querySelector('#test1').innerHTML = obj.name
+      document.querySelector('#test1').innerHTML = obj.value
     })
 
     effect(() => {
-      document.querySelector('#test2').innerHTML = obj.name
+      document.querySelector('#test2').innerHTML = obj.value
     })
 
     setTimeout(() => {
-      obj.name = '111'
-      console.log(obj.name)
+      obj.value = '111'
+      console.log(obj.value)
     }, 3000)
   </script>
 </html>
