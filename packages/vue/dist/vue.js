@@ -68,6 +68,10 @@ var Vue = (function (exports) {
     var hasChanged = function (value, oldValue) {
         return !Object.is(value, oldValue);
     };
+    var extend = Object.assign;
+    var isFunction = function (val) {
+        return typeof val === 'function';
+    };
 
     var createDep = function (effects) {
         var dep = new Set(effects);
@@ -124,16 +128,29 @@ var Vue = (function (exports) {
             finally { if (e_1) throw e_1.error; }
         }
     }
-    function triggerEffect(effets) {
-        effets.fn();
+    function triggerEffect(effect) {
+        if (effect.scheduler) {
+            effect.scheduler();
+        }
+        else {
+            effect.run();
+        }
     }
-    function effect(fn) {
+    function effect(fn, options) {
         var _effect = new ReactiveEffect(fn);
-        _effect.run();
+        if (options) {
+            extend(_effect, options);
+        }
+        if (!options || !options.lazy) {
+            // 执行 run 函数
+            _effect.run();
+        }
     }
     var ReactiveEffect = /** @class */ (function () {
-        function ReactiveEffect(fn) {
+        function ReactiveEffect(fn, scheduler) {
+            if (scheduler === void 0) { scheduler = null; }
             this.fn = fn;
+            this.scheduler = scheduler;
         }
         ReactiveEffect.prototype.run = function () {
             activeEffect = this;
@@ -185,7 +202,6 @@ var Vue = (function (exports) {
         return proxy;
     }
     var toReactive = function (value) {
-        console.log('toReactive');
         return isObject(value) ? reactive(value) : value;
     };
 
@@ -225,6 +241,7 @@ var Vue = (function (exports) {
         return RefImpl;
     }());
     function trackRefValue(ref) {
+        console.log('ref', ref, activeEffect);
         if (activeEffect) {
             trackEffects(ref.dep || (ref.dep = createDep()));
         }
@@ -238,6 +255,58 @@ var Vue = (function (exports) {
         }
     }
 
+    var ComputedRefImpl = /** @class */ (function () {
+        function ComputedRefImpl(getter, _setter, isReadonly) {
+            var _this = this;
+            this._setter = _setter;
+            this._dirty = true;
+            this.effect = new ReactiveEffect(getter, function () {
+                // 判断当前脏的状态，如果为 false，表示需要《触发依赖》
+                if (!_this._dirty) {
+                    // 将脏置为 true，表示
+                    _this._dirty = true;
+                    triggerRefValue(_this);
+                }
+            });
+        }
+        Object.defineProperty(ComputedRefImpl.prototype, "value", {
+            get: function () {
+                // 收集依赖
+                // trackRefValue(this)
+                if (this._dirty) {
+                    this._dirty = false;
+                    this._value = this.effect.run();
+                }
+                return this._value;
+            },
+            set: function (newValue) {
+                this._setter(newValue);
+            },
+            enumerable: false,
+            configurable: true
+        });
+        return ComputedRefImpl;
+    }());
+    // 计算属性
+    function computed(getterOrOptions) {
+        var getter;
+        var setter;
+        var onlyGetter = isFunction(getterOrOptions);
+        if (onlyGetter) {
+            getter = getterOrOptions;
+            setter = function () {
+                return console.warn('Write operation failed: computed value is readonly');
+            };
+        }
+        else {
+            getter = getterOrOptions.get;
+            setter = getterOrOptions.set;
+        }
+        var cRef = new ComputedRefImpl(getter, setter, onlyGetter || !setter);
+        return cRef;
+    }
+
+    exports.computed = computed;
     exports.effect = effect;
     exports.reactive = reactive;
     exports.ref = ref;

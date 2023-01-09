@@ -11,3 +11,7 @@ export const isObject = (val: unknown): val is Record<any, any> =>
  */
 export const hasChanged = (value: any, oldValue: any): boolean =>
   !Object.is(value, oldValue)
+
+export const extend = Object.assign
+export const isFunction = (val: unknown): val is Function =>
+  typeof val === 'function'

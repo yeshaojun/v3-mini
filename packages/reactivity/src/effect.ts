@@ -1,6 +1,8 @@
-import { isArray } from '@vue/shared'
+import { extend, isArray } from '@vue/shared'
 import { Dep, createDep } from './deps'
 export let activeEffect: ReactiveEffect | undefined
+export type EffectScheduler = (...args: any[]) => any
+
 type KeyToDepMap = Map<any, Dep>
 
 const targetMap = new WeakMap<any, KeyToDepMap>()
@@ -46,17 +48,35 @@ export function triggerEffects(dep: Dep) {
     triggerEffect(effect)
   }
 }
-export function triggerEffect(effets: ReactiveEffect) {
-  effets.fn()
+export function triggerEffect(effect: ReactiveEffect) {
+  if (effect.scheduler) {
+    effect.scheduler()
+  } else {
+    effect.run()
+  }
 }
 
-export function effect<T = any>(fn: () => T) {
+export interface ReactiveEffectOptions {
+  lazy?: boolean
+  scheduler?: EffectScheduler
+}
+
+export function effect<T = any>(fn: () => T, options?: ReactiveEffectOptions) {
   const _effect = new ReactiveEffect(fn)
-  _effect.run()
+  if (options) {
+    extend(_effect, options)
+  }
+  if (!options || !options.lazy) {
+    // 执行 run 函数
+    _effect.run()
+  }
 }
 
 export class ReactiveEffect<T = any> {
-  constructor(public fn: () => T) {}
+  constructor(
+    public fn: () => T,
+    public scheduler: EffectScheduler | null = null
+  ) {}
   run() {
     activeEffect = this
     return this.fn()

@@ -28,6 +28,5 @@ function createReactiveObject(
 }
 
 export const toReactive = <T extends unknown>(value: T): T => {
-  console.log('toReactive')
   return isObject(value) ? reactive(value as object) : value
 }

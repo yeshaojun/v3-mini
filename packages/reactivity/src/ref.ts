@@ -43,6 +43,7 @@ class RefImpl<T> {
 }
 
 export function trackRefValue(ref) {
+  console.log('ref', ref, activeEffect)
   if (activeEffect) {
     trackEffects(ref.dep || (ref.dep = createDep()))
   }
