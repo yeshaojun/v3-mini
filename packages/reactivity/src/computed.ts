@@ -2,7 +2,7 @@ import { isFunction } from '@vue/shared'
 import { ReactiveEffect } from './effect'
 import { trackRefValue, triggerRefValue } from './ref'
 
-class ComputedRefImpl<T> {
+export class ComputedRefImpl<T> {
   public readonly effect: ReactiveEffect<T>
   public _dirty = true
   private _value!: T
@@ -15,11 +15,12 @@ class ComputedRefImpl<T> {
         triggerRefValue(this)
       }
     })
+    this.effect.computed = this
   }
 
   get value() {
     // 收集依赖
-    // trackRefValue(this)
+    trackRefValue(this)
     if (this._dirty) {
       this._dirty = false
       this._value = this.effect.run()
