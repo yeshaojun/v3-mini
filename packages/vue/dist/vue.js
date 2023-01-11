@@ -68,10 +68,20 @@ var Vue = (function (exports) {
     var hasChanged = function (value, oldValue) {
         return !Object.is(value, oldValue);
     };
+    /**
+     * 合并对象
+     */
     var extend = Object.assign;
+    /**
+     * 是否为函数
+     */
     var isFunction = function (val) {
         return typeof val === 'function';
     };
+    /**
+     * 只读的空对象
+     */
+    var EMPTY_OBJ = {};
 
     var createDep = function (effects) {
         var dep = new Set(effects);
@@ -173,6 +183,7 @@ var Vue = (function (exports) {
             activeEffect = this;
             return this.fn();
         };
+        ReactiveEffect.prototype.stop = function () { };
         return ReactiveEffect;
     }());
 
@@ -215,11 +226,17 @@ var Vue = (function (exports) {
             return existingProxy;
         }
         var proxy = new Proxy(target, baseHandlers);
+        proxy["__v_isReactive" /* ReactiveFlags.IS_REACTIVE */] = true;
         proxyMap.set(target, proxy);
         return proxy;
     }
+    // 判断是否为对象，是则转位reactive
     var toReactive = function (value) {
         return isObject(value) ? reactive(value) : value;
+    };
+    // 是否为reactive对象
+    var isReactive = function (value) {
+        return !!(value && value["__v_isReactive" /* ReactiveFlags.IS_REACTIVE */]);
     };
 
     function ref(value) {
@@ -324,10 +341,127 @@ var Vue = (function (exports) {
         return cRef;
     }
 
+    // 对应 promise 的 pending 状态
+    var isFlushPending = false;
+    /**
+     * promise.resolve()
+     */
+    var resolvedPromise = Promise.resolve();
+    /**
+     * 待执行的任务队列
+     */
+    var pendingPreFlushCbs = [];
+    /**
+     * 队列预处理函数
+     */
+    function queuePreFlushCb(cb) {
+        queueCb(cb, pendingPreFlushCbs);
+    }
+    /**
+     * 队列处理函数
+     */
+    function queueCb(cb, pendingQueue) {
+        // 将所有的回调函数，放入队列中
+        pendingQueue.push(cb);
+        queueFlush();
+    }
+    /**
+     * 依次处理队列中执行函数
+     */
+    function queueFlush() {
+        if (!isFlushPending) {
+            isFlushPending = true;
+            resolvedPromise.then(flushJobs);
+        }
+    }
+    /**
+     * 处理队列
+     */
+    function flushJobs() {
+        isFlushPending = false;
+        flushPreFlushCbs();
+    }
+    /**
+     * 依次处理队列中的任务
+     */
+    function flushPreFlushCbs() {
+        if (pendingPreFlushCbs.length) {
+            // 去重
+            var activePreFlushCbs = __spreadArray([], __read(new Set(pendingPreFlushCbs)), false);
+            // 清空就数据
+            pendingPreFlushCbs.length = 0;
+            // 循环处理
+            for (var i = 0; i < activePreFlushCbs.length; i++) {
+                activePreFlushCbs[i]();
+            }
+        }
+    }
+
+    function watch(source, cb, options) {
+        return doWatch(source, cb, options);
+    }
+    function doWatch(source, cb, _a) {
+        var _b = _a === void 0 ? EMPTY_OBJ : _a, immediate = _b.immediate, deep = _b.deep;
+        var getter;
+        if (isReactive(source)) {
+            getter = function () { return source; };
+            deep = true;
+        }
+        else {
+            // 暂未实现
+            getter = function () { };
+        }
+        if (cb && deep) {
+            var baseGetter_1 = getter;
+            getter = function () { return traverse(baseGetter_1()); };
+        }
+        var oldValue = {};
+        // 执行job执行方法
+        var job = function () {
+            if (cb) {
+                var newValue = effect.run();
+                if (deep || hasChanged(newValue, oldValue)) {
+                    cb(newValue, oldValue);
+                    oldValue = newValue;
+                }
+            }
+        };
+        // 调度器
+        // 一个reactive的watch监听，可能触发多次scheduler，queuePreFlushCb的作用其实就是将更新触发加入队列，并只执行一次
+        var scheduler = function () { return queuePreFlushCb(job); };
+        var effect = new ReactiveEffect(getter, scheduler);
+        if (cb) {
+            if (immediate) {
+                job();
+            }
+            else {
+                oldValue = effect.run();
+            }
+        }
+        else {
+            effect.run();
+        }
+        return function () {
+            effect.stop();
+        };
+    }
+    function traverse(value, seen) {
+        if (!isObject(value)) {
+            return value;
+        }
+        seen = seen || new Set();
+        seen.add(value);
+        for (var key in value) {
+            traverse(value[key], seen);
+        }
+        return value;
+    }
+
     exports.computed = computed;
     exports.effect = effect;
     exports.reactive = reactive;
     exports.ref = ref;
+    exports.watch = watch;
 
     Object.defineProperty(exports, '__esModule', { value: true });
 

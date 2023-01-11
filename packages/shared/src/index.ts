@@ -12,6 +12,18 @@ export const isObject = (val: unknown): val is Record<any, any> =>
 export const hasChanged = (value: any, oldValue: any): boolean =>
   !Object.is(value, oldValue)
 
+/**
+ * 合并对象
+ */
 export const extend = Object.assign
+
+/**
+ * 是否为函数
+ */
 export const isFunction = (val: unknown): val is Function =>
   typeof val === 'function'
+
+/**
+ * 只读的空对象
+ */
+export const EMPTY_OBJ: { readonly [key: string]: any } = {}
