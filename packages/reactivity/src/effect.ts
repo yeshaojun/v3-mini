@@ -28,6 +28,7 @@ export function track(target: object, key: unknown) {
 
 // 利用dep 依次跟踪指定的key的所有effect
 export function trackEffects(dep: Dep) {
+  activeEffect!.deps.push(dep)
   dep.add(activeEffect!)
 }
 
@@ -84,14 +85,50 @@ export function effect<T = any>(fn: () => T, options?: ReactiveEffectOptions) {
 }
 
 export class ReactiveEffect<T = any> {
+  deps: Dep[] = []
   computed?: ComputedRefImpl<T>
+  // 如果当前是自己，则延迟清理
+  private deferStop?: boolean
+  // 监听停止
+  onStop?: () => void
+  // 是否停止
+  active = true
   constructor(
     public fn: () => T,
     public scheduler: EffectScheduler | null = null
   ) {}
   run() {
-    activeEffect = this
-    return this.fn()
+    if (!this.active) {
+      return this.fn()
+    }
+    try {
+      activeEffect = this
+      return this.fn()
+    } finally {
+      if (this.deferStop) {
+        this.stop()
+      }
+    }
   }
-  stop() {}
+  stop() {
+    console.log('effect stop')
+    debugger
+    if (this.active) {
+      cleanupEffect(this)
+      if (this.onStop) {
+        this.onStop()
+      }
+      this.active = false
+    }
+  }
+}
+
+function cleanupEffect(effect: ReactiveEffect) {
+  const { deps } = effect
+  if (deps.length) {
+    for (let i = 0; i < deps.length; i++) {
+      deps[i].delete(effect)
+    }
+    deps.length = 0
+  }
 }

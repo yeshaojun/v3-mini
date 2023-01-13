@@ -9,7 +9,7 @@
 </head>
 <body>
     <script>
-        const { effect, reactive, watch } = Vue
+        const { effect, reactive, watch, watchEffect } = Vue
         const user = reactive({
             name: "123",
             age: 20
@@ -23,12 +23,17 @@
         //     }
         // })
 
-        watch( user, (newval, oldval) => {
+        const stop = watch(() => user.age, (newval, oldval) => {
             console.log('newval', newval, oldval)
         })
 
-        user.name = '456'
-        user.age = 123 
+        setInterval(() => {
+            if(user.age > 25) {
+                console.log('stop')
+                stop()
+            }
+            user.age++
+        },1000)
     </script>
 </body>
 </html>

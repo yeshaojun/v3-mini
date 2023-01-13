@@ -1,1 +1,1 @@
-export { watch } from './apiWatch'
+export { watch, watchEffect } from './apiWatch'

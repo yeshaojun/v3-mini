@@ -1,7 +1,9 @@
-import { EMPTY_OBJ, hasChanged, isObject } from '@vue/shared'
+import { EMPTY_OBJ, hasChanged, isFunction, isObject } from '@vue/shared'
 import { isReactive } from 'packages/reactivity/src/reactive'
 import { queuePreFlushCb } from './scheduler'
 import { ReactiveEffect } from 'packages/reactivity/src/effect'
+import { isRef } from 'packages/reactivity/src/ref'
+import { ErrorCodes, callWithErrorHandling } from './errorHandling'
 
 export interface WatchOptions<Immediate = boolean> {
   immediate?: Immediate
@@ -12,17 +14,24 @@ export function watch(source, cb: Function, options?: WatchOptions) {
   return doWatch(source, cb, options)
 }
 
+export function watchEffect(effect: Function) {
+  return doWatch(effect, null)
+}
+
 function doWatch(
   source,
-  cb: Function,
+  cb: Function | null,
   { immediate, deep }: WatchOptions = EMPTY_OBJ
 ) {
   let getter: () => any
-  if (isReactive(source)) {
+  if (isRef(source)) {
+    getter = () => source.value
+  } else if (isReactive(source)) {
     getter = () => source
     deep = true
+  } else if (isFunction(source)) {
+    getter = () => callWithErrorHandling(source, ErrorCodes.WATCH_GETTER)
   } else {
-    // 暂未实现
     getter = () => {}
   }
 
@@ -40,6 +49,8 @@ function doWatch(
         cb(newValue, oldValue)
         oldValue = newValue
       }
+    } else {
+      effect.run()
     }
   }
 

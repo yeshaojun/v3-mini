@@ -7,6 +7,10 @@ export interface Ref<T = any> {
   value: T
 }
 
+export function isRef(r: any): r is Ref {
+  return !!(r && r.__v_isRef === true)
+}
+
 export function ref(value?: unknown) {
   return createRef(value, false)
 }

@@ -27,3 +27,8 @@ export const isFunction = (val: unknown): val is Function =>
  * 只读的空对象
  */
 export const EMPTY_OBJ: { readonly [key: string]: any } = {}
+
+/**
+ * 判断是否为一个 string
+ */
+export const isString = (val: unknown): val is string => typeof val === 'string'

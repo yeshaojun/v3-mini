@@ -107,6 +107,7 @@ var Vue = (function (exports) {
     }
     // 利用dep 依次跟踪指定的key的所有effect
     function trackEffects(dep) {
+        activeEffect.deps.push(dep);
         dep.add(activeEffect);
     }
     // 依赖触发
@@ -178,14 +179,46 @@ var Vue = (function (exports) {
             if (scheduler === void 0) { scheduler = null; }
             this.fn = fn;
             this.scheduler = scheduler;
+            this.deps = [];
+            // 是否停止
+            this.active = true;
         }
         ReactiveEffect.prototype.run = function () {
-            activeEffect = this;
-            return this.fn();
+            if (!this.active) {
+                return this.fn();
+            }
+            try {
+                activeEffect = this;
+                return this.fn();
+            }
+            finally {
+                if (this.deferStop) {
+                    this.stop();
+                }
+            }
         };
-        ReactiveEffect.prototype.stop = function () { };
+        ReactiveEffect.prototype.stop = function () {
+            console.log('effect stop');
+            debugger;
+            if (this.active) {
+                cleanupEffect(this);
+                if (this.onStop) {
+                    this.onStop();
+                }
+                this.active = false;
+            }
+        };
         return ReactiveEffect;
     }());
+    function cleanupEffect(effect) {
+        var deps = effect.deps;
+        if (deps.length) {
+            for (var i = 0; i < deps.length; i++) {
+                deps[i].delete(effect);
+            }
+            deps.length = 0;
+        }
+    }
 
     var get = createGetter();
     var set = createSetter();
@@ -239,6 +272,9 @@ var Vue = (function (exports) {
         return !!(value && value["__v_isReactive" /* ReactiveFlags.IS_REACTIVE */]);
     };
 
+    function isRef(r) {
+        return !!(r && r.__v_isRef === true);
+    }
     function ref(value) {
         return createRef(value, false);
     }
@@ -397,18 +433,37 @@ var Vue = (function (exports) {
         }
     }
 
+    function callWithErrorHandling(fn, type, args) {
+        var res;
+        try {
+            res = args ? fn.apply(void 0, __spreadArray([], __read(args), false)) : fn();
+        }
+        catch (err) {
+            console.log(err);
+        }
+        return res;
+    }
+
     function watch(source, cb, options) {
         return doWatch(source, cb, options);
+    }
+    function watchEffect(effect) {
+        return doWatch(effect, null);
     }
     function doWatch(source, cb, _a) {
         var _b = _a === void 0 ? EMPTY_OBJ : _a, immediate = _b.immediate, deep = _b.deep;
         var getter;
-        if (isReactive(source)) {
+        if (isRef(source)) {
+            getter = function () { return source.value; };
+        }
+        else if (isReactive(source)) {
             getter = function () { return source; };
             deep = true;
         }
+        else if (isFunction(source)) {
+            getter = function () { return callWithErrorHandling(source); };
+        }
         else {
-            // 暂未实现
             getter = function () { };
         }
         if (cb && deep) {
@@ -424,6 +479,9 @@ var Vue = (function (exports) {
                     cb(newValue, oldValue);
                     oldValue = newValue;
                 }
+            }
+            else {
+                effect.run();
             }
         };
         // 调度器
@@ -462,6 +520,7 @@ var Vue = (function (exports) {
     exports.reactive = reactive;
     exports.ref = ref;
     exports.watch = watch;
+    exports.watchEffect = watchEffect;
 
     Object.defineProperty(exports, '__esModule', { value: true });
 
