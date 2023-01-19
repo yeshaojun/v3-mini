@@ -24,6 +24,10 @@ export const enum ShapeFlags {
    */
   SLOTS_CHILDREN = 1 << 5,
   /**
+   * children vnode
+   */
+  TELEPORT = 1 << 6,
+  /**
    * 组件：有状态（响应数据）组件 | 函数组件
    */
   COMPONENT = ShapeFlags.STATEFUL_COMPONENT | ShapeFlags.FUNCTIONAL_COMPONENT

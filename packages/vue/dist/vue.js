@@ -82,6 +82,10 @@ var Vue = (function (exports) {
      * 只读的空对象
      */
     var EMPTY_OBJ = {};
+    /**
+     * 判断是否为一个 string
+     */
+    var isString = function (val) { return typeof val === 'string'; };
 
     var createDep = function (effects) {
         var dep = new Set(effects);
@@ -515,10 +519,292 @@ var Vue = (function (exports) {
         return value;
     }
 
+    /**
+     * @param value 规范class类
+     */
+    function normalizeClass(value) {
+        var res = '';
+        if (isString(value)) {
+            res = value;
+        }
+        else if (isArray(value)) {
+            // 遍历
+            for (var i = 0; i < value.length; i++) {
+                // 递归拼接
+                var normalized = normalizeClass(value[i]);
+                if (normalized) {
+                    res += normalized + ' ';
+                }
+            }
+        }
+        else if (isObject(value)) {
+            // for in 获取到所有的 key，这里的 key（name） 即为 类名。value 为 boolean 值
+            for (var name_1 in value) {
+                // 把 value 当做 boolean 来看，拼接 name
+                if (value[name_1]) {
+                    res += name_1 + ' ';
+                }
+            }
+        }
+        return res.trim();
+    }
+
+    var Fragment = Symbol('Fragment');
+    var Text = Symbol('Text');
+    var Comment = Symbol('Comment');
+    function createVNode(type, props, children) {
+        // type是组件？
+        // 暂不考虑
+        // 通过 bit 位处理 shapeFlag 类型
+        var shapeFlag = isString(type)
+            ? 1 /* ShapeFlags.ELEMENT */
+            : isObject(type)
+                ? 4 /* ShapeFlags.STATEFUL_COMPONENT */
+                : 0;
+        if (props) {
+            // 处理 class
+            var klass = props.class; props.style;
+            if (klass && !isString(klass)) {
+                props.class = normalizeClass(klass);
+            }
+        }
+        return createBaseVNode(type, props, children, shapeFlag);
+    }
+    /**
+     * 构建基础 vnode
+     */
+    function createBaseVNode(type, props, children, shapeFlag) {
+        var vnode = {
+            __v_isVNode: true,
+            type: type,
+            props: props,
+            shapeFlag: shapeFlag,
+            key: (props === null || props === void 0 ? void 0 : props.key) || null
+        };
+        normalizeChildren(vnode, children);
+        return vnode;
+    }
+    function normalizeChildren(vnode, children) {
+        var type = 0;
+        var shapeFlag = vnode.shapeFlag;
+        if (children == null) {
+            children = null;
+        }
+        else if (isArray(children)) {
+            type = 16 /* ShapeFlags.ARRAY_CHILDREN */;
+        }
+        else if (typeof children === 'object') {
+            // object,则有可能是插槽，也有可能是vNode
+            if (shapeFlag & (1 /* ShapeFlags.ELEMENT */ | 64 /* ShapeFlags.TELEPORT */)) {
+                var slot = children.default;
+                if (slot) {
+                    // _c marker is added by withCtx() indicating this is a compiled slot
+                    slot._c && (slot._d = false);
+                    normalizeChildren(vnode, slot());
+                    slot._c && (slot._d = true);
+                }
+                return;
+            }
+        }
+        else if (isFunction(children)) {
+            // function，则表示插槽
+            children = { default: children };
+            type = 32 /* ShapeFlags.SLOTS_CHILDREN */;
+        }
+        else {
+            // children 为 string
+            children = String(children);
+            // 为 type 指定 Flags
+            type = 8 /* ShapeFlags.TEXT_CHILDREN */;
+        }
+        // 修改 vnode 的 chidlren
+        vnode.children = children;
+        // 按位或赋值
+        vnode.shapeFlag |= type;
+    }
+    function isVNode(value) {
+        return value ? value.__v_isVNode === true : false;
+    }
+
+    function h(type, propsOrChildren, children) {
+        var l = arguments.length;
+        if (l === 2) {
+            if (isObject(propsOrChildren) && !isArray(propsOrChildren)) {
+                // 对象
+                if (isVNode(propsOrChildren)) {
+                    return createVNode(type, null, [propsOrChildren]);
+                }
+                return createVNode(type, propsOrChildren);
+            }
+            else {
+                return createVNode(type, null, propsOrChildren);
+            }
+        }
+        else {
+            if (l > 3) {
+                children = Array.prototype.slice.call(arguments, 2);
+            }
+            else if (l === 3 && isVNode(children)) {
+                children = [children];
+            }
+            return createVNode(type, propsOrChildren, children);
+        }
+    }
+
+    function createRenderer(options) {
+        return baseCreateRenderer(options);
+    }
+    function baseCreateRenderer(options) {
+        /**
+         * 解构 options，获取所有的兼容性方法
+         */
+        var hostInsert = options.insert, hostPatchProp = options.patchProp, hostCreateElement = options.createElement, hostSetElementText = options.setElementText; options.remove; options.createText; options.setText; options.createComment;
+        /**
+         * Element 的打补丁操作
+         */
+        var processElement = function (oldVNode, newVNode, container, anchor) {
+            if (oldVNode === null) {
+                // 挂载操作
+                mountElement(newVNode, container, anchor);
+            }
+        };
+        /**
+         * element 的挂载操作
+         */
+        var mountElement = function (vnode, container, anchor) {
+            var type = vnode.type, props = vnode.props, shapeFlag = vnode.shapeFlag;
+            // 创建 element
+            var el = (vnode.el = hostCreateElement(type));
+            if (shapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
+                // 设置 文本子节点
+                hostSetElementText(el, vnode.children);
+            }
+            // 处理 props
+            if (props) {
+                // 遍历 props 对象
+                for (var key in props) {
+                    hostPatchProp(el, key, null, props[key]);
+                }
+            }
+            // 插入 el 到指定的位置
+            hostInsert(el, container, anchor);
+        };
+        var patch = function (oldVNode, newVNode, container, anchor) {
+            if (anchor === void 0) { anchor = null; }
+            if (oldVNode === newVNode) {
+                return;
+            }
+            var type = newVNode.type, shapeFlag = newVNode.shapeFlag;
+            switch (type) {
+                case Text:
+                    break;
+                case Comment:
+                    break;
+                case Fragment:
+                    break;
+                default:
+                    if (shapeFlag & 1 /* ShapeFlags.ELEMENT */) {
+                        processElement(oldVNode, newVNode, container, anchor);
+                    }
+            }
+        };
+        var render = function (vnode, container) {
+            if (vnode === null) ;
+            else {
+                // 打补丁
+                patch(container._vnode || null, vnode, container);
+            }
+            container._vnode = vnode;
+        };
+        return {
+            render: render
+        };
+    }
+
+    var doc = document;
+    var nodeOps = {
+        /**
+         * 插入指定元素到指定位置
+         */
+        insert: function (child, parent, anchor) {
+            parent.insertBefore(child, anchor || null);
+        },
+        /**
+         * 创建指定 Element
+         */
+        createElement: function (tag) {
+            var el = doc.createElement(tag);
+            return el;
+        },
+        /**
+         * 为指定的 element 设置 textContent
+         */
+        setElementText: function (el, text) {
+            el.textContent = text;
+        },
+        /**
+         * 删除指定元素
+         */
+        remove: function (child) {
+            var parent = child.parentNode;
+            if (parent) {
+                parent.removeChild(child);
+            }
+        },
+        /**
+         * 创建 Text 节点
+         */
+        createText: function (text) { return doc.createTextNode(text); },
+        /**
+         * 设置 text
+         */
+        setText: function (node, text) {
+            node.nodeValue = text;
+        },
+        /**
+         * 创建 Comment 节点
+         */
+        createComment: function (text) { return doc.createComment(text); }
+    };
+
+    /**
+     * 为 class 打补丁
+     */
+    function patchClass(el, value) {
+        if (value == null) {
+            el.removeAttribute('class');
+        }
+        else {
+            el.className = value;
+        }
+    }
+
+    var patchProp = function (el, key, prevValue, nextValue) {
+        if (key === 'class') {
+            patchClass(el, nextValue);
+        }
+    };
+
+    var rendererOptions = extend({ patchProp: patchProp }, nodeOps);
+    var renderer;
+    function ensureRenderer() {
+        return renderer || (renderer = createRenderer(rendererOptions));
+    }
+    var render = function () {
+        var _a;
+        var args = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            args[_i] = arguments[_i];
+        }
+        (_a = ensureRenderer()).render.apply(_a, __spreadArray([], __read(args), false));
+    };
+
     exports.computed = computed;
     exports.effect = effect;
+    exports.h = h;
     exports.reactive = reactive;
     exports.ref = ref;
+    exports.render = render;
     exports.watch = watch;
     exports.watchEffect = watchEffect;
 

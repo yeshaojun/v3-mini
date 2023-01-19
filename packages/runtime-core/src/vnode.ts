@@ -1,5 +1,10 @@
 import { isArray, isFunction, isObject, isString } from '@vue/shared'
+import { normalizeClass } from 'packages/shared/src/normalizeProps'
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
+
+export const Fragment = Symbol('Fragment')
+export const Text = Symbol('Text')
+export const Comment = Symbol('Comment')
 
 /**
  * VNode
@@ -14,6 +19,9 @@ export interface VNode {
 }
 
 export function createVNode(type, props, children?): VNode {
+  // type是组件？
+  // 暂不考虑
+
   // 通过 bit 位处理 shapeFlag 类型
   const shapeFlag = isString(type)
     ? ShapeFlags.ELEMENT
@@ -21,13 +29,13 @@ export function createVNode(type, props, children?): VNode {
     ? ShapeFlags.STATEFUL_COMPONENT
     : 0
 
-  // if (props) {
-  //   // 处理 class
-  //   let { class: klass, style } = props
-  //   if (klass && !isString(klass)) {
-  //     props.class = normalizeClass(klass)
-  //   }
-  // }
+  if (props) {
+    // 处理 class
+    let { class: klass, style } = props
+    if (klass && !isString(klass)) {
+      props.class = normalizeClass(klass)
+    }
+  }
   return createBaseVNode(type, props, children, shapeFlag)
 }
 
@@ -55,9 +63,24 @@ export function normalizeChildren(vnode: VNode, children: unknown) {
   } else if (isArray(children)) {
     type = ShapeFlags.ARRAY_CHILDREN
   } else if (typeof children === 'object') {
-    // TODO: object
+    // object,则有可能是插槽，也有可能是vNode
+    if (shapeFlag & (ShapeFlags.ELEMENT | ShapeFlags.TELEPORT)) {
+      const slot = (children as any).default
+      if (slot) {
+        // _c marker is added by withCtx() indicating this is a compiled slot
+        slot._c && (slot._d = false)
+        normalizeChildren(vnode, slot())
+        slot._c && (slot._d = true)
+      }
+      return
+    } else {
+      // type = ShapeFlags.SLOTS_CHILDREN
+      // const slotFlag = children._
+    }
   } else if (isFunction(children)) {
-    // TODO: function
+    // function，则表示插槽
+    children = { default: children }
+    type = ShapeFlags.SLOTS_CHILDREN
   } else {
     // children 为 string
     children = String(children)
