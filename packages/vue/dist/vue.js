@@ -86,6 +86,11 @@ var Vue = (function (exports) {
      * 判断是否为一个 string
      */
     var isString = function (val) { return typeof val === 'string'; };
+    var onRE = /^on[^a-z]/;
+    /**
+     * 是否 on 开头
+     */
+    var isOn = function (key) { return onRE.test(key); };
 
     var createDep = function (effects) {
         var dep = new Set(effects);
@@ -550,7 +555,7 @@ var Vue = (function (exports) {
     }
 
     var Fragment = Symbol('Fragment');
-    var Text = Symbol('Text');
+    var Text$1 = Symbol('Text');
     var Comment = Symbol('Comment');
     function createVNode(type, props, children) {
         // type是组件？
@@ -651,6 +656,24 @@ var Vue = (function (exports) {
         }
     }
 
+    /**
+     * 标准化 VNode
+     */
+    function normalizeVNode(child) {
+        if (typeof child === 'object') {
+            return cloneIfMounted(child);
+        }
+        else {
+            return createVNode(Text, null, String(child));
+        }
+    }
+    /**
+     * clone VNode
+     */
+    function cloneIfMounted(child) {
+        return child;
+    }
+
     function createRenderer(options) {
         return baseCreateRenderer(options);
     }
@@ -658,7 +681,7 @@ var Vue = (function (exports) {
         /**
          * 解构 options，获取所有的兼容性方法
          */
-        var hostInsert = options.insert, hostPatchProp = options.patchProp, hostCreateElement = options.createElement, hostSetElementText = options.setElementText; options.remove; options.createText; options.setText; options.createComment;
+        var hostInsert = options.insert, hostPatchProp = options.patchProp, hostCreateElement = options.createElement, hostSetElementText = options.setElementText, hostRemove = options.remove, hostCreateText = options.createText, hostSetText = options.setText, hostCreateComment = options.createComment;
         /**
          * Element 的打补丁操作
          */
@@ -666,6 +689,43 @@ var Vue = (function (exports) {
             if (oldVNode === null) {
                 // 挂载操作
                 mountElement(newVNode, container, anchor);
+            }
+            else {
+                // 更新操作
+                patchElement(oldVNode, newVNode);
+            }
+        };
+        /**
+         * 更新节点，打补丁
+         */
+        var patchElement = function (oldVNode, newVNode) {
+            var el = (newVNode.el = oldVNode.el);
+            // 新旧 props
+            oldVNode.props || EMPTY_OBJ;
+            newVNode.props || EMPTY_OBJ;
+            // 更新子节点
+            patchChildren(oldVNode, newVNode, el);
+        };
+        var patchChildren = function (oldVNode, newVNode, container, anchor) {
+            var c1 = oldVNode && oldVNode.children;
+            var prevShapeFlag = oldVNode ? oldVNode.shapeFlag : 0;
+            var c2 = newVNode.children;
+            // 新节点的 shapeFlag
+            var shapeFlag = newVNode.shapeFlag;
+            // 新旧节点，一共有3中情况，文本，空，数组
+            // 判断新节点类型
+            if (shapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
+                if (c2 !== c1) {
+                    hostSetElementText(container, c2);
+                }
+            }
+            else {
+                if (prevShapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) ;
+                else {
+                    if (prevShapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
+                        hostSetElementText(container, '');
+                    }
+                }
             }
         };
         /**
@@ -689,18 +749,74 @@ var Vue = (function (exports) {
             // 插入 el 到指定的位置
             hostInsert(el, container, anchor);
         };
+        var processText = function (oldVNode, newVNode, container, anchor) {
+            if (anchor === void 0) { anchor = null; }
+            if (oldVNode === null) {
+                newVNode.el = hostCreateText(newVNode.children);
+                hostInsert(newVNode.el, container, anchor);
+            }
+            else {
+                var el = (newVNode.el = oldVNode.el);
+                if (newVNode.children !== oldVNode.children) {
+                    hostSetText(el, newVNode.children);
+                }
+            }
+        };
+        /**
+         * Comment 的打补丁操作
+         */
+        var processCommentNode = function (oldVNode, newVNode, container, anchor) {
+            if (oldVNode == null) {
+                // 生成节点
+                newVNode.el = hostCreateComment(newVNode.children || '');
+                // 挂载
+                hostInsert(newVNode.el, container, anchor);
+            }
+            else {
+                // 无更新
+                newVNode.el = oldVNode.el;
+            }
+        };
+        /**
+         * Fragment 的打补丁操作
+         */
+        var processFragment = function (oldVNode, newVNode, container, anchor) {
+            if (oldVNode == null) {
+                mountChildren(newVNode.children, container, anchor);
+            }
+            else {
+                patchChildren(oldVNode, newVNode, container);
+            }
+        };
+        /**
+         * 挂载子节点
+         */
+        var mountChildren = function (children, container, anchor) {
+            // 处理 Cannot assign to read only property '0' of string 'xxx'
+            if (isString(children)) {
+                children = children.split('');
+            }
+            for (var i = 0; i < children.length; i++) {
+                var child = (children[i] = normalizeVNode(children[i]));
+                patch(null, child, container, anchor);
+            }
+        };
         var patch = function (oldVNode, newVNode, container, anchor) {
             if (anchor === void 0) { anchor = null; }
             if (oldVNode === newVNode) {
                 return;
             }
+            // 判断是否为相同类型的节点
             var type = newVNode.type, shapeFlag = newVNode.shapeFlag;
             switch (type) {
-                case Text:
+                case Text$1:
+                    processText(oldVNode, newVNode, container, anchor);
                     break;
                 case Comment:
+                    processCommentNode(oldVNode, newVNode, container, anchor);
                     break;
                 case Fragment:
+                    processFragment(oldVNode, newVNode, container, anchor);
                     break;
                 default:
                     if (shapeFlag & 1 /* ShapeFlags.ELEMENT */) {
@@ -708,8 +824,16 @@ var Vue = (function (exports) {
                     }
             }
         };
+        var unmount = function (vnode) {
+            hostRemove(vnode.el);
+        };
         var render = function (vnode, container) {
-            if (vnode === null) ;
+            if (vnode === null) {
+                // 卸载
+                if (container._vnode) {
+                    unmount(container._vnode);
+                }
+            }
             else {
                 // 打补丁
                 patch(container._vnode || null, vnode, container);
@@ -779,11 +903,139 @@ var Vue = (function (exports) {
         }
     }
 
+    /**
+     * 为 style 属性进行打补丁
+     */
+    function patchStyle(el, prev, next) {
+        // 获取 style 对象
+        var style = el.style;
+        // 判断新的样式是否为纯字符串
+        var isCssString = isString(next);
+        if (next && !isCssString) {
+            // 赋值新样式
+            for (var key in next) {
+                setStyle(style, key, next[key]);
+            }
+            // 清理旧样式
+            if (prev && !isString(prev)) {
+                for (var key in prev) {
+                    if (next[key] == null) {
+                        setStyle(style, key, '');
+                    }
+                }
+            }
+        }
+    }
+    /**
+     * 赋值样式
+     */
+    function setStyle(style, name, val) {
+        style[name] = val;
+    }
+
+    /**
+     * 通过 DOM Properties 指定属性
+     */
+    function patchDOMProp(el, key, value) {
+        try {
+            el[key] = value;
+        }
+        catch (e) { }
+    }
+
+    /**
+     * 通过 setAttribute 设置属性
+     */
+    function patchAttr(el, key, value) {
+        if (value == null) {
+            el.removeAttribute(key);
+        }
+        else {
+            el.setAttribute(key, value);
+        }
+    }
+
+    function patchEvent(el, rawName, prevValue, nextValue) {
+        // vei = vue event invokers
+        // 缓存事件，防止重复挂载
+        var invokers = el._vei || (el._vei = {});
+        // 是否存在
+        var existingInvoker = invokers[rawName];
+        if (nextValue && existingInvoker) {
+            existingInvoker.value = nextValue;
+        }
+        else {
+            var name_1 = parseName(rawName);
+            if (nextValue) {
+                var invoker = (invokers[rawName] = createInvoker(nextValue));
+                el.addEventListener(name_1, invoker);
+            }
+            else {
+                // remove
+                el.removeEventListener(name_1, existingInvoker);
+                // 删除缓存
+                invokers[rawName] = undefined;
+            }
+        }
+    }
+    /**
+     * 直接返回剔除 on，其余转化为小写的事件名即可
+     */
+    function parseName(name) {
+        return name.slice(2).toLowerCase();
+    }
+    /**
+     * 生成 invoker 函数
+     */
+    function createInvoker(initialValue) {
+        var invoker = function (e) {
+            invoker.value && invoker.value();
+        };
+        // value 为真实的事件行为
+        invoker.value = initialValue;
+        return invoker;
+    }
+
     var patchProp = function (el, key, prevValue, nextValue) {
         if (key === 'class') {
             patchClass(el, nextValue);
         }
+        else if (key === 'style') {
+            // style
+            patchStyle(el, prevValue, nextValue);
+        }
+        else if (isOn(key)) {
+            patchEvent(el, key, prevValue, nextValue);
+        }
+        else if (shouldSetAsProp(el, key)) {
+            patchDOMProp(el, key, nextValue);
+        }
+        else {
+            patchAttr(el, key, nextValue);
+        }
     };
+    /**
+     * 判断指定元素的指定属性是否可以通过 DOM Properties 指定
+     */
+    function shouldSetAsProp(el, key) {
+        // 各种边缘情况处理
+        if (key === 'spellcheck' || key === 'draggable' || key === 'translate') {
+            return false;
+        }
+        // #1787, #2840 表单元素的表单属性是只读的，必须设置为属性 attribute
+        if (key === 'form') {
+            return false;
+        }
+        // #1526 <input list> 必须设置为属性 attribute
+        if (key === 'list' && el.tagName === 'INPUT') {
+            return false;
+        }
+        // #2766 <textarea type> 必须设置为属性 attribute
+        if (key === 'type' && el.tagName === 'TEXTAREA') {
+            return false;
+        }
+        return key in el;
+    }
 
     var rendererOptions = extend({ patchProp: patchProp }, nodeOps);
     var renderer;

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="../dist/vue.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script>
+      const { h, render } = Vue
+      const vnode = h(
+        'div',
+        {
+          class: 'test',
+          type: '234',
+          onClick: () => {
+            alert('test1')
+          }
+        },
+        'helo world'
+      )
+      render(vnode, document.querySelector('#app'))
+      console.warn('vnode', vnode)
+
+      //   setTimeout(() => {
+      //     const vnode = h(
+      //       'div',
+      //       {
+      //         class: 'test'
+      //       },
+      //       'update vnode'
+      //     )
+      //     render(vnode, document.querySelector('#app'))
+      //   }, 2000)
+    </script>
+  </body>
+</html>
