@@ -1,7 +1,14 @@
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
 import { Comment, Fragment, Text } from './vnode'
 import { EMPTY_OBJ, isString } from '@vue/shared'
-import { normalizeVNode } from './componentRenderUtils'
+import {
+  normalizeVNode,
+  renderComponentRoot,
+  shouldUpdateComponent
+} from './componentRenderUtils'
+import { createComponentInstance, setupComponent } from './component'
+import { ReactiveEffect } from 'packages/reactivity/src/effect'
+import { queuePreFlushCb } from './scheduler'
 
 export interface RendererOptions {
   /**
@@ -160,6 +167,74 @@ function baseCreateRenderer(options: RendererOptions) {
     }
   }
 
+  const processComponent = (oldVNode, newVNode, container, anchor = null) => {
+    if (oldVNode === null) {
+      // 挂载
+      // keep-alive
+      mountComponent(newVNode, container, anchor)
+    } else {
+      // 更新
+      updateComponent(oldVNode, newVNode)
+    }
+  }
+
+  const updateComponent = (oldVNode, newVNode) => {
+    const instance = (oldVNode.component = newVNode.component)!
+    if (shouldUpdateComponent(oldVNode, newVNode)) {
+    } else {
+      newVNode.el = oldVNode.el
+      instance.vnode = newVNode
+    }
+  }
+
+  const mountComponent = (initialVNode, container, anchor) => {
+    // 实例, 定义对象，并赋值，此时并无渲染方法
+    const instance = (initialVNode.component =
+      createComponentInstance(initialVNode))
+
+    // 标准化组件数据，确保instance里面是有render的
+    setupComponent(instance)
+
+    setupRenderEffect(instance, initialVNode, container, anchor)
+  }
+
+  const setupRenderEffect = (instance, initialVNode, container, anchor) => {
+    const componentUpdateFn = () => {
+      if (!instance.isMounted) {
+        const subTree = (instance.subTree = renderComponentRoot(instance))
+
+        patch(null, subTree, container, anchor)
+        initialVNode.el = subTree.el
+        instance.isMounted = true
+      } else {
+        let { next, vnode } = instance
+        if (!next) {
+          next = vnode
+        }
+
+        const nextTree = renderComponentRoot(instance)
+
+        // 保存对应的 subTree，以便进行更新操作
+        const prevTree = instance.subTree
+        instance.subTree = nextTree
+
+        patch(prevTree, nextTree, container, anchor)
+
+        // 更新 next
+        next.el = nextTree.el
+      }
+    }
+
+    const effect = (instance.effect = new ReactiveEffect(
+      componentUpdateFn,
+      () => queuePreFlushCb(update)
+    ))
+
+    const update = (instance.update = () => effect.run())
+
+    update()
+  }
+
   /**
    * Comment 的打补丁操作
    */
@@ -223,6 +298,8 @@ function baseCreateRenderer(options: RendererOptions) {
         if (shapeFlag & ShapeFlags.ELEMENT) {
           processElement(oldVNode, newVNode, container, anchor)
         } else if (shapeFlag & ShapeFlags.COMPONENT) {
+          // 组件
+          processComponent(oldVNode, newVNode, container, anchor)
         }
     }
   }

@@ -673,6 +673,91 @@ var Vue = (function (exports) {
     function cloneIfMounted(child) {
         return child;
     }
+    function renderComponentRoot(instance) {
+        var vnode = instance.vnode, render = instance.render, _a = instance.data, data = _a === void 0 ? {} : _a;
+        var result;
+        try {
+            if (vnode.shapeFlag & 4 /* ShapeFlags.STATEFUL_COMPONENT */) {
+                result = normalizeVNode(render.call(data, data));
+            }
+        }
+        catch (error) {
+            console.log(error);
+        }
+        return result;
+    }
+
+    var uid = 0;
+    /**
+     * 规范化组件实例数据
+     */
+    function setupComponent(instance) {
+        // initprops initSlots
+        // 为 render 赋值
+        var setupResult = setupStatefulComponent(instance);
+        return setupResult;
+    }
+    function setupStatefulComponent(instance) {
+        var Component = instance.type;
+        var setup = Component.setup;
+        // 存在 setup ，则直接获取 setup 函数的返回值即可
+        if (setup) {
+            var setupResult = setup();
+            handleSetupResult(instance, setupResult);
+        }
+        else {
+            // 获取组件实例
+            finishComponentSetup(instance);
+        }
+    }
+    /**
+     * 创建组件实例
+     */
+    function createComponentInstance(vnode) {
+        var type = vnode.type;
+        var instance = {
+            uid: uid++,
+            vnode: vnode,
+            type: type,
+            subTree: null,
+            effect: null,
+            update: null,
+            render: null,
+            // 生命周期相关
+            isMounted: false,
+            bc: null,
+            c: null,
+            bm: null,
+            m: null // mounted
+        };
+        return instance;
+    }
+    function handleSetupResult(instance, setupResult) {
+        // 存在 setupResult，并且它是一个函数，则 setupResult 就是需要渲染的 render
+        if (isFunction(setupResult)) {
+            instance.render = setupResult;
+        }
+        finishComponentSetup(instance);
+    }
+    function finishComponentSetup(instance) {
+        var Component = instance.type;
+        // 存在render, 不需要处理
+        // 组件不存在 render 时，才需要重新赋值
+        if (!instance.render) {
+            // 存在编辑器，并且组件中不包含 render 函数，同时包含 template 模板，则直接使用编辑器进行编辑，得到 render 函数
+            // if (compile && !Component.render) {
+            // 	if (Component.template) {
+            // 		// 这里就是 runtime 模块和 compile 模块结合点
+            // 		const template = Component.template
+            // 		Component.render = compile(template)
+            // 	}
+            // }
+            // 为 render 赋值
+            instance.render = Component.render;
+        }
+        // // 改变 options 中的 this 指向
+        // applyOptions(instance)
+    }
 
     function createRenderer(options) {
         return baseCreateRenderer(options);
@@ -762,6 +847,59 @@ var Vue = (function (exports) {
                 }
             }
         };
+        var processComponent = function (oldVNode, newVNode, container, anchor) {
+            if (anchor === void 0) { anchor = null; }
+            if (oldVNode === null) {
+                // 挂载
+                // keep-alive
+                mountComponent(newVNode, container, anchor);
+            }
+            else {
+                // 更新
+                updateComponent(oldVNode, newVNode);
+            }
+        };
+        var updateComponent = function (oldVNode, newVNode) {
+            var instance = (oldVNode.component = newVNode.component);
+            {
+                newVNode.el = oldVNode.el;
+                instance.vnode = newVNode;
+            }
+        };
+        var mountComponent = function (initialVNode, container, anchor) {
+            // 实例, 定义对象，并赋值，此时并无渲染方法
+            var instance = (initialVNode.component =
+                createComponentInstance(initialVNode));
+            // 标准化组件数据，确保instance里面是有render的
+            setupComponent(instance);
+            setupRenderEffect(instance, initialVNode, container, anchor);
+        };
+        var setupRenderEffect = function (instance, initialVNode, container, anchor) {
+            var componentUpdateFn = function () {
+                if (!instance.isMounted) {
+                    var subTree = (instance.subTree = renderComponentRoot(instance));
+                    patch(null, subTree, container, anchor);
+                    initialVNode.el = subTree.el;
+                    instance.isMounted = true;
+                }
+                else {
+                    var next = instance.next, vnode = instance.vnode;
+                    if (!next) {
+                        next = vnode;
+                    }
+                    var nextTree = renderComponentRoot(instance);
+                    // 保存对应的 subTree，以便进行更新操作
+                    var prevTree = instance.subTree;
+                    instance.subTree = nextTree;
+                    patch(prevTree, nextTree, container, anchor);
+                    // 更新 next
+                    next.el = nextTree.el;
+                }
+            };
+            var effect = (instance.effect = new ReactiveEffect(componentUpdateFn, function () { return queuePreFlushCb(update); }));
+            var update = (instance.update = function () { return effect.run(); });
+            update();
+        };
         /**
          * Comment 的打补丁操作
          */
@@ -821,6 +959,10 @@ var Vue = (function (exports) {
                 default:
                     if (shapeFlag & 1 /* ShapeFlags.ELEMENT */) {
                         processElement(oldVNode, newVNode, container, anchor);
+                    }
+                    else if (shapeFlag & 6 /* ShapeFlags.COMPONENT */) {
+                        // 组件
+                        processComponent(oldVNode, newVNode, container, anchor);
                     }
             }
         };

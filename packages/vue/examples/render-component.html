@@ -11,23 +11,23 @@
     <div id="app"></div>
     <script>
       const { h, render } = Vue
-      const vnode = h(
-        'div',
-        {
-          class: 'test'
-        },
-        'helo world'
-      )
-      render(vnode, document.querySelector('#app'))
+        const compontent = {
+            render() {
+                const vnode1 = h('div', '这是一个 component')
+                return vnode1 
+            }
+        }
+        const vnode = h(compontent) 
+        render(vnode, document.querySelector('#app'))
 
       setTimeout(() => {
-        const vnode = h(
-          'div',
-          {
-            class: 'test'
-          },
-          'update'
-        )
+        const compontent = {
+            render() {
+                const vnode1 = h('div', '这是一个 component update')
+                return vnode1 
+            }
+        }
+        const vnode = h(compontent) 
         render(vnode, document.querySelector('#app'))
       }, 2000)
     </script>

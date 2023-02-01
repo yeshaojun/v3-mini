@@ -1,3 +1,4 @@
+import { ShapeFlags } from 'packages/shared/src/shapeFlags'
 import { createVNode } from './vnode'
 
 /**
@@ -16,4 +17,21 @@ export function normalizeVNode(child) {
  */
 export function cloneIfMounted(child) {
   return child
+}
+
+export function renderComponentRoot(instance) {
+  const { vnode, render, data = {} } = instance
+  let result
+  try {
+    if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
+      result = normalizeVNode(render!.call(data, data))
+    }
+  } catch (error) {
+    console.log(error)
+  }
+  return result
+}
+
+export function shouldUpdateComponent(oldVNode, newVNode): boolean {
+  return false
 }
