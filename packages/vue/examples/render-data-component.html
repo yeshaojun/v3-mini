@@ -12,24 +12,21 @@
     <script>
       const { h, render } = Vue
         const compontent = {
+            data() {
+                return {
+                    msg: "this is data test"
+                }
+            },
+            beforeCreate() {
+              alert('beforeCreate')
+            },
             render() {
-                const vnode1 = h('div', '这是一个 component')
-                return vnode1 
+                const vnode = h('div', '这是一个 component' + this.msg)
+                return vnode 
             }
         }
         const vnode = h(compontent) 
         render(vnode, document.querySelector('#app'))
-
-      setTimeout(() => {
-        const compontent1 = {
-            render() {
-                const vnode1 = h('div', '这是一个 component update')
-                return vnode1 
-            }
-        }
-        const vnode = h(compontent1) 
-        render(vnode, document.querySelector('#app'))
-      }, 2000)
     </script>
   </body>
 </html>

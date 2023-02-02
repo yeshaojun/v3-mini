@@ -1,4 +1,16 @@
-import { isFunction } from '@vue/shared'
+import { reactive } from '@vue/reactivity'
+import { isFunction, isObject } from '@vue/shared'
+import { onBeforeMount, onMounted } from './apiLifecycle'
+
+/**
+ * 生命周期钩子
+ */
+export const enum LifecycleHooks {
+  BEFORE_CREATE = 'bc',
+  CREATED = 'c',
+  BEFORE_MOUNT = 'bm',
+  MOUNTED = 'm'
+}
 
 let uid = 0
 
@@ -75,6 +87,52 @@ export function finishComponentSetup(instance) {
     instance.render = Component.render
   }
 
-  // // 改变 options 中的 this 指向
-  // applyOptions(instance)
+  // 改变 options 中的 this 指向
+  applyOptions(instance)
+}
+
+function applyOptions(instance: any) {
+  const {
+    data: dataOptions,
+    beforeCreate,
+    created,
+    beforeMount,
+    mounted
+  } = instance.type
+
+  // hooks
+  if (beforeCreate) {
+    callHook(beforeCreate, instance.data)
+  }
+
+  // 存在 data 选项时
+  if (dataOptions) {
+    // 触发 dataOptions 函数，拿到 data 对象
+    const data = dataOptions()
+    // 如果拿到的 data 是一个对象
+    if (isObject(data)) {
+      // 则把 data 包装成 reactiv 的响应性数据，赋值给 instance
+      instance.data = reactive(data)
+    }
+  }
+
+  // hooks
+  if (created) {
+    callHook(created, instance.data)
+  }
+
+  function registerLifecycleHook(register: Function, hook?: Function) {
+    register(hook?.bind(instance.data), instance)
+  }
+
+  // 注册 hooks
+  registerLifecycleHook(onBeforeMount, beforeMount)
+  registerLifecycleHook(onMounted, mounted)
+}
+
+/**
+ * 触发 hooks
+ */
+function callHook(hook: Function, proxy) {
+  hook.bind(proxy)()
 }

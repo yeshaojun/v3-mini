@@ -24,6 +24,8 @@ export function renderComponentRoot(instance) {
   let result
   try {
     if (vnode.shapeFlag & ShapeFlags.STATEFUL_COMPONENT) {
+      // 执行render，并把this绑定到data返回的对象上
+      // core源码中是绑定到proxy上下文中
       result = normalizeVNode(render!.call(data, data))
     }
   } catch (error) {

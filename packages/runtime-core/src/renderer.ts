@@ -1,5 +1,5 @@
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
-import { Comment, Fragment, Text } from './vnode'
+import { Comment, Fragment, Text, isSameVNodeType } from './vnode'
 import { EMPTY_OBJ, isString } from '@vue/shared'
 import {
   normalizeVNode,
@@ -169,8 +169,8 @@ function baseCreateRenderer(options: RendererOptions) {
 
   const processComponent = (oldVNode, newVNode, container, anchor = null) => {
     if (oldVNode === null) {
+      // keep-alive 暂未实现
       // 挂载
-      // keep-alive
       mountComponent(newVNode, container, anchor)
     } else {
       // 更新
@@ -201,9 +201,18 @@ function baseCreateRenderer(options: RendererOptions) {
   const setupRenderEffect = (instance, initialVNode, container, anchor) => {
     const componentUpdateFn = () => {
       if (!instance.isMounted) {
+        // 获取 hook
+        const { bm, m } = instance
+        if (bm) {
+          bm()
+        }
         const subTree = (instance.subTree = renderComponentRoot(instance))
-
+        console.log('subTree', subTree)
         patch(null, subTree, container, anchor)
+        if (m) {
+          m()
+        }
+
         initialVNode.el = subTree.el
         instance.isMounted = true
       } else {
@@ -282,6 +291,10 @@ function baseCreateRenderer(options: RendererOptions) {
     }
 
     // 判断是否为相同类型的节点
+    if (oldVNode && !isSameVNodeType(oldVNode, newVNode)) {
+      unmount(oldVNode)
+      oldVNode = null
+    }
 
     const { type, shapeFlag } = newVNode
     switch (type) {

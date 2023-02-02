@@ -630,6 +630,12 @@ var Vue = (function (exports) {
     function isVNode(value) {
         return value ? value.__v_isVNode === true : false;
     }
+    /**
+     * 根据 key || type 判断是否为相同类型节点
+     */
+    function isSameVNodeType(n1, n2) {
+        return n1.type === n2.type && n1.key === n2.key;
+    }
 
     function h(type, propsOrChildren, children) {
         var l = arguments.length;
@@ -678,6 +684,8 @@ var Vue = (function (exports) {
         var result;
         try {
             if (vnode.shapeFlag & 4 /* ShapeFlags.STATEFUL_COMPONENT */) {
+                // 执行render，并把this绑定到data返回的对象上
+                // core源码中是绑定到proxy上下文中
                 result = normalizeVNode(render.call(data, data));
             }
         }
@@ -686,6 +694,24 @@ var Vue = (function (exports) {
         }
         return result;
     }
+
+    function injectHook(type, hook, target) {
+        // 将 hook 注册到 组件实例中
+        if (target) {
+            target[type] = hook;
+            return hook;
+        }
+    }
+    /**
+     * 创建一个指定的 hook
+     * @param lifecycle 指定的 hook enum
+     * @returns 注册 hook 的方法
+     */
+    var createHook = function (lifecycle) {
+        return function (hook, target) { return injectHook(lifecycle, hook, target); };
+    };
+    var onBeforeMount = createHook("bm" /* LifecycleHooks.BEFORE_MOUNT */);
+    var onMounted = createHook("m" /* LifecycleHooks.MOUNTED */);
 
     var uid = 0;
     /**
@@ -755,8 +781,41 @@ var Vue = (function (exports) {
             // 为 render 赋值
             instance.render = Component.render;
         }
-        // // 改变 options 中的 this 指向
-        // applyOptions(instance)
+        // 改变 options 中的 this 指向
+        applyOptions(instance);
+    }
+    function applyOptions(instance) {
+        var _a = instance.type, dataOptions = _a.data, beforeCreate = _a.beforeCreate, created = _a.created, beforeMount = _a.beforeMount, mounted = _a.mounted;
+        // hooks
+        if (beforeCreate) {
+            callHook(beforeCreate, instance.data);
+        }
+        // 存在 data 选项时
+        if (dataOptions) {
+            // 触发 dataOptions 函数，拿到 data 对象
+            var data = dataOptions();
+            // 如果拿到的 data 是一个对象
+            if (isObject(data)) {
+                // 则把 data 包装成 reactiv 的响应性数据，赋值给 instance
+                instance.data = reactive(data);
+            }
+        }
+        // hooks
+        if (created) {
+            callHook(created, instance.data);
+        }
+        function registerLifecycleHook(register, hook) {
+            register(hook === null || hook === void 0 ? void 0 : hook.bind(instance.data), instance);
+        }
+        // 注册 hooks
+        registerLifecycleHook(onBeforeMount, beforeMount);
+        registerLifecycleHook(onMounted, mounted);
+    }
+    /**
+     * 触发 hooks
+     */
+    function callHook(hook, proxy) {
+        hook.bind(proxy)();
     }
 
     function createRenderer(options) {
@@ -850,8 +909,8 @@ var Vue = (function (exports) {
         var processComponent = function (oldVNode, newVNode, container, anchor) {
             if (anchor === void 0) { anchor = null; }
             if (oldVNode === null) {
+                // keep-alive 暂未实现
                 // 挂载
-                // keep-alive
                 mountComponent(newVNode, container, anchor);
             }
             else {
@@ -877,8 +936,17 @@ var Vue = (function (exports) {
         var setupRenderEffect = function (instance, initialVNode, container, anchor) {
             var componentUpdateFn = function () {
                 if (!instance.isMounted) {
+                    // 获取 hook
+                    var bm = instance.bm, m = instance.m;
+                    if (bm) {
+                        bm();
+                    }
                     var subTree = (instance.subTree = renderComponentRoot(instance));
+                    console.log('subTree', subTree);
                     patch(null, subTree, container, anchor);
+                    if (m) {
+                        m();
+                    }
                     initialVNode.el = subTree.el;
                     instance.isMounted = true;
                 }
@@ -945,6 +1013,10 @@ var Vue = (function (exports) {
                 return;
             }
             // 判断是否为相同类型的节点
+            if (oldVNode && !isSameVNodeType(oldVNode, newVNode)) {
+                unmount(oldVNode);
+                oldVNode = null;
+            }
             var type = newVNode.type, shapeFlag = newVNode.shapeFlag;
             switch (type) {
                 case Text$1:
