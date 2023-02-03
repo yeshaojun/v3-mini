@@ -10,15 +10,24 @@
   <body>
     <div id="app"></div>
     <script>
-      const { h, render } = Vue
+      const { h, render, ref } = Vue
         const compontent = {
             data() {
                 return {
                     msg: "this is data test"
                 }
             },
+            // setup() {
+            //   const msg = ref('ref data')
+            //   return {
+            //     msg
+            //   }
+            // },
             beforeCreate() {
               alert('beforeCreate')
+            },
+            mounted() {
+              console.log('mounted', this.msg)
             },
             render() {
                 const vnode = h('div', '这是一个 component' + this.msg)

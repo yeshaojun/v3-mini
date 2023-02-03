@@ -64,8 +64,11 @@ export function createComponentInstance(vnode) {
 
 export function handleSetupResult(instance, setupResult) {
   // 存在 setupResult，并且它是一个函数，则 setupResult 就是需要渲染的 render
+  console.log('handleSetupResult', isFunction(setupResult))
   if (isFunction(setupResult)) {
     instance.render = setupResult
+  } else if(isObject(setupResult)){
+    
   }
   finishComponentSetup(instance)
 }
