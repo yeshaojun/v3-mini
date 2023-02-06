@@ -109,6 +109,7 @@ function baseCreateRenderer(options: RendererOptions) {
       if (prevShapeFlag & ShapeFlags.ARRAY_CHILDREN) {
         if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
           // 这里要进行 diff 运算
+          patchKeyChildren(c1, c2, container, anchor)
         }
         // 新子节点不为 ARRAY_CHILDREN，则直接卸载旧子节点
         else {
@@ -122,6 +123,90 @@ function baseCreateRenderer(options: RendererOptions) {
         if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
           // 挂载
         }
+      }
+    }
+  }
+
+  /**
+   * diff比对
+   */
+  const patchKeyChildren = (
+    oldChildren,
+    newChildren,
+    container,
+    parentAnchor
+  ) => {
+    let i = 0
+    // 新节点长度
+    const newChildrenLength = newChildren.length
+    // 旧节点最大下标
+    let oldChildrenEnd = oldChildren.length - 1
+    // 新节点最大下标
+    let newChildrenEnd = newChildrenLength - 1
+
+    // 1. sync from start(之前向后对比)
+    // (a b) c
+    // (a b) d e
+    while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+      const oldVNode = oldChildren[i]
+      // 新节点标准化
+      const newVNode = normalizeVNode(newChildren[i])
+      if (isSameVNodeType(oldVNode, newVNode)) {
+        patch(oldVNode, newVNode, container, null)
+      } else {
+        break
+      }
+      i++
+    }
+
+    // 2. sync from end(自后向前对比)
+    // a (b c)
+    // d e (b c)
+
+    while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+      const oldVNode = oldChildren[oldChildrenEnd]
+      const newVNode = normalizeVNode(newChildren[newChildrenEnd])
+      if (isSameVNodeType(oldVNode, newVNode)) {
+        patch(oldVNode, newVNode, container, null)
+      } else {
+        break
+      }
+      oldChildrenEnd--
+      newChildrenEnd--
+    }
+
+    // 3. common sequence + mount( 新节点多与旧节点时的 diff 比对)
+    // (a b)
+    // (a b) c
+    // i = 2, e1 = 1, e2 = 2
+    // (a b)
+    // c (a b)
+    // i = 0, e1 = -1, e2 = 0
+    if (i > oldChildrenEnd) {
+      // 新节点多
+      if (i <= newChildrenEnd) {
+        const nextPos = newChildrenEnd + 1
+        const anchor =
+          nextPos < newChildrenLength ? newChildren[nextPos].el : parentAnchor
+        while (i <= newChildrenEnd) {
+          // 挂载新节点
+          patch(null, normalizeVNode(newChildren[i]), container, anchor)
+          i++
+        }
+      }
+    }
+    // 4. common sequence + unmount
+    // (a b) c
+    // (a b)
+    // i = 2, e1 = 2, e2 = 1
+    // a (b c)
+    // (b c)
+    // i = 0, e1 = 0, e2 = -1
+    else if (i > newChildrenEnd) {
+      // 旧节点多
+      while (i <= oldChildrenEnd) {
+        unmount(oldChildren[i])
+        i++
       }
     }
   }

@@ -12,20 +12,9 @@
     <script>
       const { h, render, ref } = Vue
       const compontent = {
-        data() {
-          return {
-            msg: 'this is data test'
-          }
-        },
-        beforeCreate() {
-          alert('beforeCreate')
-        },
-        mounted() {
-          console.log('mounted', this.msg)
-        },
-        render() {
-          const vnode = h('div', '这是一个 component' + this.msg)
-          return vnode
+        setup() {
+          const msg = ref('msg123412')
+          return () => h('div', msg.value)
         }
       }
       const vnode = h(compontent)
