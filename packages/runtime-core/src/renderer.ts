@@ -209,6 +209,135 @@ function baseCreateRenderer(options: RendererOptions) {
         i++
       }
     }
+    // 5. unknown sequence
+    // [i ... e1 + 1]: a b [c d e] f g
+    // [i ... e2 + 1]: a b [e d c h] f g
+    // i = 2, e1 = 4, e2 = 5
+    else {
+      // 1. 前4步处理完之后，剩下需要[c d e] 变成 [e d c h]
+      // 这个i是比对之后的i,也就是2
+      const oldStartIndex = i
+      const newStartIndex = i
+
+      // 5.1 创建一个map，将新节点的key，以及序号做关联
+      const keyToNewIndexMap = new Map()
+      for (i = newStartIndex; i <= newChildrenEnd; i++) {
+        // 从 newChildren 中根据开始索引获取每一个 child（c2 = newChildren）
+        const nextChild = normalizeVNode(newChildren[i])
+        // child 必须存在 key（这也是为什么 v-for 必须要有 key 的原因）
+        if (nextChild.key != null) {
+          // 把 key 和 对应的索引，放到 keyToNewIndexMap 对象中
+          keyToNewIndexMap.set(nextChild.key, i)
+        }
+      }
+
+      // 5.2循环oldChildren,并尝试进行 patch（打补丁）或 unmount（删除）旧节点
+      // 只查看旧节点的key在新节点中是否有对应，有的话，打补丁，没有的话则删除，移动以及新增在5.3
+      let j
+      // 已经修复节点数量
+      let patched = 0
+      // 待修复节点数量
+      const toBePatched = newChildrenEnd - newStartIndex + 1
+      // 标记是否需要移动
+      let moved = false
+      // 配合 moved 进行使用，它始终保存当前最大的 index 值
+      let maxNewIndexSoFar = 0
+      // 创建一个 Array 的对象，用来确定最长递增子序列。它的下标表示：《新节点的下标（newIndex），不计算已处理的节点。即：n-c 被认为是 0》，元素表示：《对应旧节点的下标（oldIndex），永远 +1》
+      // 但是，需要特别注意的是：oldIndex 的值应该永远 +1 （ 因为 0 代表了特殊含义，他表示《新节点没有找到对应的旧节点，此时需要新增新节点》）。即：旧节点下标为 0， 但是记录时会被记录为 1
+      const newIndexToOldIndexMap = new Array(toBePatched)
+      // 遍历 toBePatched ，为 newIndexToOldIndexMap 进行初始化，初始化时，所有的元素为 0
+      for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
+      // 遍历 oldChildren（s1 = oldChildrenStart; e1 = oldChildrenEnd），获取旧节点，如果当前 已经处理的节点数量 > 待处理的节点数量，那么就证明：《所有的节点都已经更新完成，剩余的旧节点全部删除即可》
+      for (i = oldStartIndex; i <= oldChildrenEnd; i++) {
+        const prevChild = oldChildren[i]
+        if (patched >= toBePatched) {
+          // 所有的节点都已经更新完成，剩余的旧节点全部删除即可,不需要再进行遍历
+          unmount(prevChild)
+          continue
+        }
+        // 新节点需要存在的位置，需要根据旧节点来进行寻找（包含已处理的节点。即：n-c 被认为是 1）
+        let newIndex
+        if (prevChild.key != null) {
+          newIndex = keyToNewIndexMap.get(prevChild.key)
+        } else {
+          // 旧节点的 key 不存在（无 key 节点）
+          // 那么我们就遍历所有的新节点，找到《没有找到对应旧节点的新节点，并且该新节点可以和旧节点匹配》，如果能找到，那么 newIndex = 该新节点索引
+          for (j = newStartIndex; j <= newChildrenEnd; j++) {
+            // 找到《没有找到对应旧节点的新节点，并且该新节点可以和旧节点匹配》
+            if (
+              newIndexToOldIndexMap[j - newStartIndex] === 0 &&
+              isSameVNodeType(prevChild, newChildren[j])
+            ) {
+              // 如果能找到，那么 newIndex = 该新节点索引
+              newIndex = j
+              break
+            }
+          }
+        }
+        // 最终没有找到新节点的索引，则证明：当前旧节点没有对应的新节点
+        if (newIndex === undefined) {
+          // 此时，直接删除即可
+          unmount(prevChild)
+        }
+        // 没有进入 if，则表示：当前旧节点找到了对应的新节点，那么接下来就是要判断对于该新节点而言，是要 patch（打补丁）还是 move（移动）
+        else {
+          // 为 newIndexToOldIndexMap 填充值：下标表示：《新节点的下标（newIndex），不计算已处理的节点。即：n-c 被认为是 0》，元素表示：《对应旧节点的下标（oldIndex），永远 +1》
+          // 因为 newIndex 包含已处理的节点，所以需要减去 s2（s2 = newChildrenStart）表示：不计算已处理的节点
+          newIndexToOldIndexMap[newIndex - newStartIndex] = i + 1
+          // maxNewIndexSoFar 会存储当前最大的 newIndex，它应该是一个递增的，如果没有递增，则证明有节点需要移动
+          if (newIndex >= maxNewIndexSoFar) {
+            // 持续递增
+            maxNewIndexSoFar = newIndex
+          } else {
+            // 没有递增，则需要移动，moved = true
+            moved = true
+          }
+          // 打补丁
+          patch(prevChild, newChildren[newIndex], container, null)
+          // 自增已处理的节点数量
+          patched++
+        }
+      }
+
+      // 5.3 针对移动和挂载的处理 [c d e] 变成 [e d c h]
+      // 仅当节点需要移动的时候，我们才需要生成最长递增子序列，否则只需要有一个空数组即可
+      // 新节点为下标，对应的旧节点位置
+      const increasingNewIndexSequence = moved
+        ? getSequence(newIndexToOldIndexMap)
+        : []
+
+      j = increasingNewIndexSequence.length - 1 // 最后一个值的下标
+      // 倒序循环，以便我们可以使用最后修补的节点作为锚点
+      for (i = toBePatched - 1; i >= 0; i--) {
+        // nextIndex（需要更新的新节点下标） = newChildrenStart + i
+        // 换算成实际的下标
+        const nextIndex = newStartIndex + i
+        // 根据 nextIndex 拿到要处理的 新节点
+        const nextChild = newChildren[nextIndex]
+        // 锚dian
+        const anchor =
+          nextIndex + 1 < newChildrenLength
+            ? newChildren[nextIndex + 1].el
+            : parentAnchor
+        // 如果 newIndexToOldIndexMap 中保存的 value = 0，则表示：新节点没有用对应的旧节点，此时需要挂载新节点
+        if (newIndexToOldIndexMap[i] === 0) {
+          // 挂载新节点
+          patch(null, nextChild, container, anchor)
+        }
+        // 则移动
+        else if (moved) {
+          // j < 0 表示：不存在 最长递增子序列
+          // i !== increasingNewIndexSequence[j] 表示：当前节点不在最后位置
+          // 那么此时就需要 move （移动）
+          if (j < 0 || i !== increasingNewIndexSequence[j]) {
+            move(nextChild, container, anchor)
+          } else {
+            // j 随着循环递减
+            j--
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -422,4 +551,49 @@ function baseCreateRenderer(options: RendererOptions) {
   return {
     render
   }
+}
+
+// https://en.wikipedia.org/wiki/Longest_increasing_subsequence
+// 1.如果后续值比result中的最大值还大，直接push
+// 2.如果比最大值小，则使用二分法进行查询需要替换的目标位置
+// 3.但是这个二分查找可能有问题，比如5，6，1，会被替换成1，6，所以需要一个额外的p来进行回溯哦，也就说进行纠错，变成5，6
+function getSequence(arr: number[]): number[] {
+  const p = arr.slice()
+  const result = [0]
+  let i, j, u, v, c
+  const len = arr.length
+  for (i = 0; i < len; i++) {
+    const arrI = arr[i]
+    if (arrI !== 0) {
+      j = result[result.length - 1]
+      if (arr[j] < arrI) {
+        p[i] = j
+        result.push(i)
+        continue
+      }
+      u = 0
+      v = result.length - 1
+      while (u < v) {
+        c = (u + v) >> 1
+        if (arr[result[c]] < arrI) {
+          u = c + 1
+        } else {
+          v = c
+        }
+      }
+      if (arrI < arr[result[u]]) {
+        if (u > 0) {
+          p[i] = result[u - 1]
+        }
+        result[u] = i
+      }
+    }
+  }
+  u = result.length
+  v = result[u - 1]
+  while (u-- > 0) {
+    result[u] = v
+    v = p[v]
+  }
+  return result
 }
