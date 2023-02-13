@@ -849,7 +849,7 @@ var Vue = (function (exports) {
             oldVNode.props || EMPTY_OBJ;
             newVNode.props || EMPTY_OBJ;
             // 更新子节点
-            patchChildren(oldVNode, newVNode, el);
+            patchChildren(oldVNode, newVNode, el, null);
         };
         var patchChildren = function (oldVNode, newVNode, container, anchor) {
             var c1 = oldVNode && oldVNode.children;
@@ -865,13 +865,95 @@ var Vue = (function (exports) {
                 }
             }
             else {
-                if (prevShapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) ;
+                if (prevShapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
+                    if (shapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
+                        // 这里要进行 diff 运算
+                        patchKeyChildren(c1, c2, container, anchor);
+                    }
+                }
                 else {
                     if (prevShapeFlag & 8 /* ShapeFlags.TEXT_CHILDREN */) {
                         hostSetElementText(container, '');
                     }
                 }
             }
+        };
+        /**
+         * diff比对
+         */
+        var patchKeyChildren = function (oldChildren, newChildren, container, parentAnchor) {
+            var i = 0;
+            // 新节点长度
+            var newChildrenLength = newChildren.length;
+            // 旧节点最大下标
+            var oldChildrenEnd = oldChildren.length - 1;
+            // 新节点最大下标
+            var newChildrenEnd = newChildrenLength - 1;
+            // 1. sync from start(之前向后对比)
+            // (a b) c
+            // (a b) d e
+            while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+                var oldVNode = oldChildren[i];
+                // 新节点标准化
+                var newVNode = normalizeVNode(newChildren[i]);
+                if (isSameVNodeType(oldVNode, newVNode)) {
+                    patch(oldVNode, newVNode, container, null);
+                }
+                else {
+                    break;
+                }
+                i++;
+            }
+            // 2. sync from end(自后向前对比)
+            // a (b c)
+            // d e (b c)
+            while (i <= oldChildrenEnd && i <= newChildrenEnd) {
+                var oldVNode = oldChildren[oldChildrenEnd];
+                var newVNode = normalizeVNode(newChildren[newChildrenEnd]);
+                if (isSameVNodeType(oldVNode, newVNode)) {
+                    patch(oldVNode, newVNode, container, null);
+                }
+                else {
+                    break;
+                }
+                oldChildrenEnd--;
+                newChildrenEnd--;
+            }
+            // 3. common sequence + mount( 新节点多与旧节点时的 diff 比对)
+            // (a b)
+            // (a b) c
+            // i = 2, e1 = 1, e2 = 2
+            // (a b)
+            // c (a b)
+            // i = 0, e1 = -1, e2 = 0
+            if (i > oldChildrenEnd) {
+                // 新节点多
+                if (i <= newChildrenEnd) {
+                    var nextPos = newChildrenEnd + 1;
+                    var anchor = nextPos < newChildrenLength ? newChildren[nextPos].el : parentAnchor;
+                    while (i <= newChildrenEnd) {
+                        // 挂载新节点
+                        patch(null, normalizeVNode(newChildren[i]), container, anchor);
+                        i++;
+                    }
+                }
+            }
+            // 4. common sequence + unmount
+            // (a b) c
+            // (a b)
+            // i = 2, e1 = 2, e2 = 1
+            // a (b c)
+            // (b c)
+            // i = 0, e1 = 0, e2 = -1
+            else if (i > newChildrenEnd) {
+                // 旧节点多
+                while (i <= oldChildrenEnd) {
+                    unmount(oldChildren[i]);
+                    i++;
+                }
+            }
+            // 乱序
+            else ;
         };
         /**
          * element 的挂载操作
@@ -992,7 +1074,7 @@ var Vue = (function (exports) {
                 mountChildren(newVNode.children, container, anchor);
             }
             else {
-                patchChildren(oldVNode, newVNode, container);
+                patchChildren(oldVNode, newVNode, container, anchor);
             }
         };
         /**
@@ -1266,6 +1348,209 @@ var Vue = (function (exports) {
         (_a = ensureRenderer()).render.apply(_a, __spreadArray([], __read(args), false));
     };
 
+    /**
+     * 基础的 parse 方法，生成 AST
+     * @param content tempalte 模板
+     * @returns
+     */
+    function baseParse(content) {
+        // 创建 parser 对象，未解析器的上下文对象
+        var context = createParserContext(content);
+        parseChildren(context, []);
+        //   return createRoot(children)
+    }
+    /**
+     * 创建解析器上下文
+     */
+    function createParserContext(content) {
+        // 合成 context 上下文对象
+        return {
+            source: content
+        };
+    }
+    function parseChildren(context, ancestors) {
+        // 存放所有 node节点数据的数组
+        var nodes = [];
+        /**
+         * 循环解析所有 node 节点，可以理解为对 token 的处理。
+         * 例如：<div>hello world</div>，此时的处理顺序为：
+         * 1. <div
+         * 2. >
+         * 3. hello world
+         * 4. </
+         * 5. div>
+         */
+        while (!isEnd(context, ancestors)) {
+            /**
+             * 模板源
+             */
+            var s = context.source;
+            // 定义 node 节点
+            var node = void 0;
+            if (startsWith(s, '{{')) ;
+            else if (s[0] === '<') {
+                // 以 < 开始，后面跟a-z 表示，这是一个标签的开始
+                if (/[a-z]/i.test(s[1])) {
+                    // 此时要处理 Element
+                    node = parseElement(context, ancestors);
+                }
+            }
+            if (!node) {
+                node = parseText(context);
+            }
+            pushNode(nodes, node);
+        }
+        return nodes;
+    }
+    /**
+     * 解析 Element 元素。例如：<div>
+     */
+    function parseElement(context, ancestors) {
+        // -- 先处理开始标签 --
+        var element = parseTag(context);
+        //   //  -- 处理子节点 --
+        ancestors.push(element);
+        //   // 递归触发 parseChildren
+        var children = parseChildren(context, ancestors);
+        ancestors.pop();
+        //   // 为子节点赋值
+        element.children = children;
+        //   //  -- 最后处理结束标签 --
+        if (startsWithEndTagOpen(context.source, element.tag)) {
+            parseTag(context);
+        }
+        // 整个标签处理完成
+        return element;
+    }
+    /**
+     * 解析文本。
+     */
+    function parseText(context) {
+        /**
+         * 定义普通文本结束的标记
+         * 例如：hello world </div>，那么文本结束的标记就为 <
+         * PS：这也意味着如果你渲染了一个 <div> hell<o </div> 的标签，那么你将得到一个错误
+         */
+        var endTokens = ['<', '{{'];
+        // 计算普通文本结束的位置
+        var endIndex = context.source.length;
+        // 计算精准的 endIndex，计算的逻辑为：从 context.source 中分别获取 '<', '{{' 的下标，取最小值为 endIndex
+        for (var i = 0; i < endTokens.length; i++) {
+            var index = context.source.indexOf(endTokens[i], 1);
+            if (index !== -1 && endIndex > index) {
+                endIndex = index;
+            }
+        }
+        // 获取处理的文本内容
+        var content = parseTextData(context, endIndex);
+        return {
+            type: 2 /* NodeTypes.TEXT */,
+            content: content
+        };
+    }
+    /**
+     * 从指定位置（length）获取给定长度的文本数据。
+     */
+    function parseTextData(context, length) {
+        // 获取指定的文本数据
+        var rawText = context.source.slice(0, length);
+        // 《继续》对模板进行解析处理
+        advanceBy(context, length);
+        // 返回获取到的文本
+        return rawText;
+    }
+    /**
+     * 解析标签
+     */
+    function parseTag(context, type) {
+        // -- 处理标签开始部分 --
+        // 通过正则获取标签名
+        var match = /^<\/?([a-z][^\r\n\t\f />]*)/i.exec(context.source);
+        // 标签名字
+        var tag = match[1];
+        // 对模板进行解析处理
+        advanceBy(context, match[0].length);
+        //   // 属性与指令处理
+        //   advanceSpaces(context)
+        //   let props = parseAttributes(context, type)
+        //   // -- 处理标签结束部分 --
+        //   // 判断是否为自关闭标签，例如 <img />
+        var isSelfClosing = startsWith(context.source, '/>');
+        //   // 《继续》对模板进行解析处理，是自动标签则处理两个字符 /> ，不是则处理一个字符 >
+        advanceBy(context, isSelfClosing ? 2 : 1);
+        //   // 标签类型
+        var tagType = 0 /* ElementTypes.ELEMENT */;
+        return {
+            type: 1 /* NodeTypes.ELEMENT */,
+            tag: tag,
+            tagType: tagType,
+            // 属性与指令
+            props: []
+        };
+    }
+    /**
+     * 是否以指定文本开头
+     */
+    function startsWith(source, searchString) {
+        return source.startsWith(searchString);
+    }
+    /**
+     * 判断是否为结束节点
+     */
+    function isEnd(context, ancestors) {
+        var s = context.source;
+        // 解析是否为结束标签
+        if (startsWith(s, '</')) {
+            for (var i = ancestors.length - 1; i >= 0; --i) {
+                if (startsWithEndTagOpen(s, ancestors[i].tag)) {
+                    return true;
+                }
+            }
+        }
+        return !s;
+    }
+    /**
+     * 前进一步。多次调用，每次调用都会处理一部分的模板内容
+     * 以 <div>hello world</div> 为例
+     * 1. <div
+     * 2. >
+     * 3. hello world
+     * 4. </div
+     * 5. >
+     */
+    function advanceBy(context, numberOfCharacters) {
+        // template 模板源
+        var source = context.source;
+        // 去除开始部分的无效数据
+        context.source = source.slice(numberOfCharacters);
+    }
+    /**
+     * nodes.push(node)
+     */
+    function pushNode(nodes, node) {
+        nodes.push(node);
+    }
+    /**
+     * 判断当前是否为《标签结束的开始》。比如 </div> 就是 div 标签结束的开始
+     * @param source 模板。例如：</div>
+     * @param tag 标签。例如：div
+     * @returns
+     */
+    function startsWithEndTagOpen(source, tag) {
+        return (startsWith(source, '</') &&
+            source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase() &&
+            /[\t\r\n\f />]/.test(source[2 + tag.length] || '>'));
+    }
+
+    function baseCompile(template, options) {
+        baseParse(template.trim());
+    }
+
+    function compile(template, options) {
+        return baseCompile(template);
+    }
+
+    exports.compile = compile;
     exports.computed = computed;
     exports.effect = effect;
     exports.h = h;

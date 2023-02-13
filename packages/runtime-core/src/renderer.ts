@@ -209,6 +209,9 @@ function baseCreateRenderer(options: RendererOptions) {
         i++
       }
     }
+    // 乱序
+    else {
+    }
   }
 
   /**
