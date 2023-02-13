@@ -340,6 +340,14 @@ function baseCreateRenderer(options: RendererOptions) {
     }
   }
 
+    /**
+   * 移动节点到指定位置
+   */
+    const move = (vnode, container, anchor) => {
+      const { el } = vnode
+      hostInsert(el!, container, anchor)
+    }
+
   /**
    * element 的挂载操作
    */
