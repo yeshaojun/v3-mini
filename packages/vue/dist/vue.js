@@ -1535,8 +1535,18 @@ var Vue = (function (exports) {
         // 创建 parser 对象，未解析器的上下文对象
         var context = createParserContext(content);
         var children = parseChildren(context, []);
-        return children;
-        //   return createRoot(children)
+        return createRoot(children);
+    }
+    /**
+     * 生成 root 节点
+     */
+    function createRoot(children) {
+        return {
+            type: 0 /* NodeTypes.ROOT */,
+            children: children,
+            // loc：位置，这个属性并不影响渲染，但是它必须存在，否则会报错。所以我们给了他一个 {}
+            loc: {}
+        };
     }
     /**
      * 创建解析器上下文

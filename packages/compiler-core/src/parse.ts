@@ -25,8 +25,19 @@ export function baseParse(content: string) {
   // 创建 parser 对象，未解析器的上下文对象
   const context = createParserContext(content)
   const children = parseChildren(context, [])
-  return children
-  //   return createRoot(children)
+  return createRoot(children)
+}
+
+/**
+ * 生成 root 节点
+ */
+export function createRoot(children) {
+  return {
+    type: NodeTypes.ROOT,
+    children,
+    // loc：位置，这个属性并不影响渲染，但是它必须存在，否则会报错。所以我们给了他一个 {}
+    loc: {}
+  }
 }
 
 /**
