@@ -1,3 +1,5 @@
+import { CREATE_ELEMENT_VNODE } from './runtimeHelpers'
+
 /**
  * 节点类型（我们这里复制了所有的节点类型，但是我们实际上只用到了极少的部分）
  */
@@ -55,4 +57,28 @@ export const enum ElementTypes {
    * template
    */
   TEMPLATE
+}
+
+export function createVNodeCall(context, tag, props?, children?) {
+  if (context) {
+    context.helper(CREATE_ELEMENT_VNODE)
+  }
+
+  return {
+    type: NodeTypes.VNODE_CALL,
+    tag,
+    props,
+    children
+  }
+}
+
+/**
+ * return hello {{ msg }} 复合表达式
+ */
+export function createCompoundExpression(children, loc) {
+  return {
+    type: NodeTypes.COMPOUND_EXPRESSION,
+    loc,
+    children
+  }
 }

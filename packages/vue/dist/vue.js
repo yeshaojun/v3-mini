@@ -1535,8 +1535,7 @@ var Vue = (function (exports) {
         // 创建 parser 对象，未解析器的上下文对象
         var context = createParserContext(content);
         var children = parseChildren(context, []);
-        return children;
-        //   return createRoot(children)
+        return createRoot(children);
     }
     /**
      * 创建解析器上下文
@@ -1720,14 +1719,260 @@ var Vue = (function (exports) {
             source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase() &&
             /[\t\r\n\f />]/.test(source[2 + tag.length] || '>'));
     }
+    /**
+     * 生成 root 节点
+     */
+    function createRoot(children) {
+        return {
+            type: 0 /* NodeTypes.ROOT */,
+            children: children,
+            // loc：位置，这个属性并不影响渲染，但是它必须存在，否则会报错。所以我们给了他一个 {}
+            loc: {}
+        };
+    }
+
+    /**
+     * 单个元素的根节点
+     */
+    function isSingleElementRoot(root, child) {
+        var children = root.children;
+        return children.length === 1 && child.type === 1 /* NodeTypes.ELEMENT */;
+    }
+
+    /**
+     *
+     * @param root ast
+     * @param options
+     */
+    function transform(root, options) {
+        // 1.创建上下文
+        var context = createTransformContext(root, options);
+        // 按照深度优先依次处理 node 节点转化
+        traverseNode(root, context);
+        console.log('root', root);
+        createRootCodegen(root);
+        root.helpers = __spreadArray([], __read(context.helpers.keys()), false);
+        root.components = [];
+        root.directives = [];
+        root.imports = [];
+        root.hoists = [];
+        root.temps = [];
+        root.cached = [];
+    }
+    // 遍历所有的ast树，从子节点开始，依次执行nodeTransforms中的方法
+    function traverseNode(node, context) {
+        // 通过上下文记录当前正在处理的 node 节点
+        context.currentNode = node;
+        // 获取当前所有 node 节点的 transform 方法
+        var nodeTransforms = context.nodeTransforms;
+        // 存储转化函数的数组
+        var exitFns = [];
+        for (var i_1 = 0; i_1 < nodeTransforms.length; i_1++) {
+            var onExit = nodeTransforms[i_1](node, context);
+            if (onExit) {
+                // 指令的 transforms 返回为 数组，所以需要解构
+                if (isArray(onExit)) {
+                    exitFns.push.apply(exitFns, __spreadArray([], __read(onExit), false));
+                }
+                else {
+                    exitFns.push(onExit);
+                }
+            }
+            // 这个函数为啥要放到循环里面？？？？
+            if (!context.currentNode) {
+                // 节点已删除
+                return;
+            }
+            else {
+                // 节点更换
+                node = context.currentNode;
+            }
+        }
+        //  转化节点
+        switch (node.type) {
+            case 10 /* NodeTypes.IF_BRANCH */:
+            case 1 /* NodeTypes.ELEMENT */:
+            case 0 /* NodeTypes.ROOT */:
+                traverseChildren(node, context);
+                break;
+            // 处理插值表达式 {{}}
+            // case NodeTypes.INTERPOLATION:
+            //   context.helper(TO_DISPLAY_STRING)
+            //   break
+            // // v-if 指令处理
+            // case NodeTypes.IF:
+            //   for (let i = 0; i < node.branches.length; i++) {
+            //     traverseNode(node.branches[i], context)
+            //   }
+            //   break
+        }
+        // 在退出时执行 transform
+        context.currentNode = node;
+        var i = exitFns.length;
+        while (i--) {
+            exitFns[i]();
+        }
+    }
+    /**
+     * 循环处理子节点
+     */
+    function traverseChildren(parent, context) {
+        parent.children.forEach(function (node, index) {
+            context.parent = parent;
+            context.childIndex = index;
+            traverseNode(node, context);
+        });
+    }
+    function createTransformContext(root, _a) {
+        var _b = _a.nodeTransforms, nodeTransforms = _b === void 0 ? [] : _b;
+        var context = {
+            nodeTransforms: nodeTransforms,
+            root: root,
+            helpers: new Map(),
+            currentNode: root,
+            parent: null,
+            childIndex: 0,
+            helper: function (name) {
+                // 此处的逻辑是？
+                // 做静态标记？？？？
+                var count = context.helpers.get(name) || 0;
+                context.helpers.set(name, count + 1);
+                return name;
+            },
+            replaceNode: function (node) {
+                context.parent.children[context.childIndex] = context.currentNode = node;
+            }
+        };
+        return context;
+    }
+    /**
+     * 生成 root 节点下的 codegen
+     */
+    function createRootCodegen(root) {
+        var children = root.children;
+        // 仅支持一个根节点的处理
+        if (children.length === 1) {
+            // 获取单个根节点
+            var child = children[0];
+            if (isSingleElementRoot(root, child) && child.codegenNode) {
+                var codegenNode = child.codegenNode;
+                root.codegenNode = codegenNode;
+            }
+        }
+    }
+
+    var _a;
+    var CREATE_ELEMENT_VNODE = Symbol('createElementVNode');
+    var CREATE_VNODE = Symbol('createVNode');
+    var TO_DISPLAY_STRING = Symbol('toDisplayString');
+    var CREATE_COMMENT = Symbol("createCommentVNode");
+    /**
+     * const {xxx} = Vue
+     * 即：从 Vue 中可以被导出的方法，我们这里统一使用  createVNode
+     */
+    (_a = {},
+        // 在 renderer 中，通过 export { createVNode as createElementVNode }
+        _a[CREATE_ELEMENT_VNODE] = 'createElementVNode',
+        _a[CREATE_VNODE] = 'createVNode',
+        _a[TO_DISPLAY_STRING] = 'toDisplayString',
+        _a[CREATE_COMMENT] = 'createCommentVNode',
+        _a);
+
+    function createVNodeCall(context, tag, props, children) {
+        if (context) {
+            context.helper(CREATE_ELEMENT_VNODE);
+        }
+        return {
+            type: 13 /* NodeTypes.VNODE_CALL */,
+            tag: tag,
+            props: props,
+            children: children
+        };
+    }
+    /**
+     * return hello {{ msg }} 复合表达式
+     */
+    function createCompoundExpression(children, loc) {
+        return {
+            type: 8 /* NodeTypes.COMPOUND_EXPRESSION */,
+            loc: loc,
+            children: children
+        };
+    }
+
+    var transformElement = function (node, context) {
+        return function postTransformElement() {
+            node = context.currentNode;
+            // 仅处理 ELEMENT 类型
+            if (node.type !== 1 /* NodeTypes.ELEMENT */) {
+                return;
+            }
+            var tag = node.tag;
+            var vnodeTag = "\"".concat(tag, "\"");
+            var vnodeProps = [];
+            var vnodeChildren = node.children;
+            node.codegenNode = createVNodeCall(context, vnodeTag, vnodeProps, vnodeChildren);
+        };
+    };
+
+    function isText(node) {
+        return node.type === 5 /* NodeTypes.INTERPOLATION */ || node.type === 2 /* NodeTypes.TEXT */;
+    }
+
+    var transformText = function (node, context) {
+        if (node.type === 0 /* NodeTypes.ROOT */ ||
+            node.type === 1 /* NodeTypes.ELEMENT */ ||
+            node.type === 11 /* NodeTypes.FOR */ ||
+            node.type === 10 /* NodeTypes.IF_BRANCH */) {
+            return function () {
+                // 获取所有的子节点
+                var children = node.children;
+                // 当前容器
+                var currentContainer;
+                // 循环处理所有的子节点
+                for (var i = 0; i < children.length; i++) {
+                    var child = children[i];
+                    if (isText(child)) {
+                        // j = i + 1 表示下一个节点
+                        for (var j = i + 1; j < children.length; j++) {
+                            var next = children[j];
+                            // 当前节点 child 和 下一个节点 next 都是 Text 节点
+                            if (isText(next)) {
+                                if (!currentContainer) {
+                                    // 生成一个复合表达式节点
+                                    currentContainer = children[i] = createCompoundExpression([child], child.loc);
+                                }
+                                // 在 当前节点 child 和 下一个节点 next 中间，插入 "+" 号
+                                currentContainer.children.push(" + ", next);
+                                // 把下一个删除
+                                children.splice(j, 1);
+                                j--;
+                            }
+                            // 当前节点 child 是 Text 节点，下一个节点 next 不是 Text 节点，则把 currentContainer 置空即可
+                            else {
+                                currentContainer = undefined;
+                                break;
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    };
 
     function baseCompile(template, options) {
+        if (options === void 0) { options = {}; }
         var ast = baseParse(template.trim());
+        console.log('ast before', JSON.stringify(ast));
+        transform(ast, extend(options, {
+            nodeTransforms: [transformElement, transformText]
+        }));
+        console.log('ast after', JSON.stringify(ast));
         return ast;
     }
 
     function compile(template, options) {
-        return baseCompile(template);
+        return baseCompile(template, options);
     }
 
     exports.compile = compile;
