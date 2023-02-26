@@ -12,23 +12,23 @@
     <div id="app"></div>
   </body>
   <script>
-    const { compile, h, render } = Vue
+    const { compile, h, render, createElementVNode } = Vue
     // 创建 template
     const template = `<div> hello world </div>`
-
     // 生成 render 函数
     const renderFn = compile(template)
-    // console.log('ast', renderFn)
+    console.log('ast', renderFn)
     // 创建组件
-    //   const component = {
-    //     render: renderFn
-    //   }
+    const component = {
+      render: renderFn
+    }
 
     //   // 通过 h 函数，生成 vnode
-    //   const vnode = h(component)
+    const vnode = h(component)
+    console.log('bdeo', vnode)
 
     //   // 通过 render 函数渲染组件
-    //   render(vnode, document.querySelector('#app'))
+    render(vnode, document.querySelector('#app'))
     //
   </script>
 </html>

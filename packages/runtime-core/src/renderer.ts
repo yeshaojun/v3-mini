@@ -9,6 +9,7 @@ import {
 import { createComponentInstance, setupComponent } from './component'
 import { ReactiveEffect } from 'packages/reactivity/src/effect'
 import { queuePreFlushCb } from './scheduler'
+import { createAppAPI } from './apiCreateApp'
 
 export interface RendererOptions {
   /**
@@ -362,7 +363,7 @@ function baseCreateRenderer(options: RendererOptions) {
       hostSetElementText(el, vnode.children as string)
     } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
       // 设置 Array 子节点
-      //   mountChildren(vnode.children, el, anchor)
+      mountChildren(vnode.children, el, anchor)
     }
 
     // 处理 props
@@ -557,7 +558,8 @@ function baseCreateRenderer(options: RendererOptions) {
   }
 
   return {
-    render
+    render,
+    createApp: createAppAPI(render)
   }
 }
 

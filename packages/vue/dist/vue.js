@@ -56,6 +56,14 @@ var Vue = (function (exports) {
     }
 
     /**
+     * 用于将 {{ Interpolation }} 值转换为显示的字符串。
+     * @private
+     */
+    var toDisplayString = function (val) {
+        return String(val);
+    };
+
+    /**
      * 判断是否为一个数组
      */
     var isArray = Array.isArray;
@@ -555,7 +563,7 @@ var Vue = (function (exports) {
     }
 
     var Fragment = Symbol('Fragment');
-    var Text$1 = Symbol('Text');
+    var Text = Symbol('Text');
     var Comment = Symbol('Comment');
     function createVNode(type, props, children) {
         // type是组件？
@@ -695,6 +703,1073 @@ var Vue = (function (exports) {
         return result;
     }
 
+    var _a;
+    var CREATE_ELEMENT_VNODE = Symbol('createElementVNode');
+    var CREATE_VNODE = Symbol('createVNode');
+    var TO_DISPLAY_STRING = Symbol('toDisplayString');
+    var CREATE_COMMENT = Symbol("createCommentVNode");
+    /**
+     * const {xxx} = Vue
+     * 即：从 Vue 中可以被导出的方法，我们这里统一使用  createVNode
+     */
+    var helperNameMap = (_a = {},
+        // 在 renderer 中，通过 export { createVNode as createElementVNode }
+        _a[CREATE_ELEMENT_VNODE] = 'createElementVNode',
+        _a[CREATE_VNODE] = 'createVNode',
+        _a[TO_DISPLAY_STRING] = 'toDisplayString',
+        _a[CREATE_COMMENT] = 'createCommentVNode',
+        _a[TO_DISPLAY_STRING] = 'toDisplayString',
+        _a);
+
+    function isText(node) {
+        return node.type === 5 /* NodeTypes.INTERPOLATION */ || node.type === 2 /* NodeTypes.TEXT */;
+    }
+    /**
+     * 返回 vnode 生成函数
+     */
+    function getVNodeHelper(ssr, isComponent) {
+        return ssr || isComponent ? CREATE_VNODE : CREATE_ELEMENT_VNODE;
+    }
+    /**
+     * 是否为 v-slot
+     */
+    function isVSlot(p) {
+        return p.type === 7 /* NodeTypes.DIRECTIVE */ && p.name === 'slot';
+    }
+    /**
+     * 创建对象表达式节点
+     */
+    function createObjectExpression(properties) {
+        return {
+            type: 15 /* NodeTypes.JS_OBJECT_EXPRESSION */,
+            loc: {},
+            properties: properties
+        };
+    }
+    function injectProp(node, prop) {
+        var propsWithInjection;
+        var props = node.type === 13 /* NodeTypes.VNODE_CALL */ ? node.props : node.arguments[2];
+        if (props == null || isString(props)) {
+            propsWithInjection = createObjectExpression([prop]);
+        }
+        if (node.type === 13 /* NodeTypes.VNODE_CALL */) {
+            node.props = propsWithInjection;
+        }
+    }
+    /**
+     * 返回 vnode 节点
+     */
+    function getMemoedVNodeCall(node) {
+        return node;
+    }
+
+    var aliasHelper = function (s) { return "".concat(helperNameMap[s], ": _").concat(helperNameMap[s]); };
+    function createCodegenContext(ast) {
+        var context = {
+            // render 函数代码字符串
+            code: "",
+            // 运行时全局的变量名
+            runtimeGlobalName: 'Vue',
+            // 模板源
+            source: ast.loc.source,
+            // 缩进级别
+            indentLevel: 0,
+            // 需要触发的方法，关联 JavaScript AST 中的 helpers
+            helper: function (key) {
+                return "_".concat(helperNameMap[key]);
+            },
+            /**
+             * 插入代码
+             */
+            push: function (code) {
+                context.code += code;
+            },
+            /**
+             * 新的一行
+             */
+            newline: function () {
+                newline(context.indentLevel);
+            },
+            /**
+             * 控制缩进 + 换行
+             */
+            indent: function () {
+                newline(++context.indentLevel);
+            },
+            /**
+             * 控制缩进 + 换行
+             */
+            deindent: function () {
+                newline(--context.indentLevel);
+            }
+        };
+        function newline(n) {
+            context.code += '\n' + "  ".repeat(n);
+        }
+        return context;
+    }
+    function generate(ast) {
+        // 生成上下文
+        var context = createCodegenContext(ast);
+        // 获取code拼接方法
+        var push = context.push, newline = context.newline, indent = context.indent, deindent = context.deindent;
+        //  生成函数的前置代码：const _Vue = Vue
+        genFunctionPreamble(context);
+        // 创建方法名称
+        var functionName = "render";
+        // 创建方法参数
+        var args = ['_ctx', '_cache'];
+        var signature = args.join(', ');
+        // 利用方法名称和参数拼接函数声明
+        push("function ".concat(functionName, "(").concat(signature, ") {"));
+        // 缩进 + 换行
+        indent();
+        // 主要函数体
+        push("with (_ctx) {");
+        indent();
+        var hasHelpers = ast.helpers.length > 0;
+        if (hasHelpers) {
+            push("const { ".concat(ast.helpers.map(aliasHelper).join(', '), " } = _Vue"));
+            push("\n");
+            newline();
+        }
+        // 最后拼接 return 的值
+        newline();
+        push("return ");
+        if (ast.codegenNode) {
+            genNode(ast.codegenNode, context);
+        }
+        else {
+            push("null");
+        }
+        // with 结尾
+        deindent();
+        push("}");
+        // 收缩缩进 + 换行
+        deindent();
+        push("}");
+        return {
+            ast: ast,
+            code: context.code
+        };
+    }
+    /**
+     * 生成 "const _Vue = Vue\n\nreturn "
+     */
+    function genFunctionPreamble(context) {
+        var push = context.push, newline = context.newline, runtimeGlobalName = context.runtimeGlobalName;
+        var VueBinding = runtimeGlobalName;
+        push("const _Vue = ".concat(VueBinding, "\n"));
+        newline();
+        push("return ");
+    }
+    /**
+     * 区分节点进行处理
+     */
+    function genNode(node, context) {
+        switch (node.type) {
+            case 1 /* NodeTypes.ELEMENT */:
+            case 9 /* NodeTypes.IF */:
+                genNode(node.codegenNode, context);
+                break;
+            case 13 /* NodeTypes.VNODE_CALL */:
+                genVNodeCall(node, context);
+                break;
+            case 2 /* NodeTypes.TEXT */:
+                genText(node, context);
+                break;
+            // {{}} 处理
+            case 8 /* NodeTypes.COMPOUND_EXPRESSION */:
+                genCompoundExpression(node, context);
+                break;
+            // 表达式处理
+            case 5 /* NodeTypes.INTERPOLATION */:
+                genInterpolation(node, context);
+                break;
+            // 复合表达式处理
+            case 4 /* NodeTypes.SIMPLE_EXPRESSION */:
+                genExpression(node, context);
+                break;
+            // JS调用表达式的处理
+            case 14 /* NodeTypes.JS_CALL_EXPRESSION */:
+                genCallExpression(node, context);
+                break;
+            // JS条件表达式的处理
+            case 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */:
+                genConditionalExpression(node, context);
+                break;
+        }
+    }
+    function genConditionalExpression(node, context) {
+        var test = node.test, consequent = node.consequent, alternate = node.alternate, needNewline = node.newline;
+        var push = context.push, indent = context.indent, deindent = context.deindent, newline = context.newline;
+        if (test.type === 4 /* NodeTypes.SIMPLE_EXPRESSION */) {
+            // 写入变量
+            genExpression(test, context);
+        }
+        // 换行
+        needNewline && indent();
+        // 缩进++
+        context.indentLevel++;
+        // 写入空格
+        needNewline || push(" ");
+        // 写入 ？
+        push("? ");
+        // 写入满足条件的处理逻辑
+        genNode(consequent, context);
+        // 缩进 --
+        context.indentLevel--;
+        // 换行
+        needNewline && newline();
+        // 写入空格
+        needNewline || push(" ");
+        // 写入:
+        push(": ");
+        // 判断 else 的类型是否也为 JS_CONDITIONAL_EXPRESSION
+        var isNested = alternate.type === 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */;
+        // 不是则缩进++
+        if (!isNested) {
+            context.indentLevel++;
+        }
+        // 写入 else （不满足条件）的处理逻辑
+        genNode(alternate, context);
+        // 缩进--
+        if (!isNested) {
+            context.indentLevel--;
+        }
+        // 控制缩进 + 换行
+        needNewline && deindent(true /* without newline */);
+    }
+    /**
+     * JS调用表达式的处理
+     */
+    function genCallExpression(node, context) {
+        var push = context.push, helper = context.helper;
+        var callee = isString(node.callee) ? node.callee : helper(node.callee);
+        push(callee + "(", node);
+        genNodeList(node.arguments, context);
+        push(")");
+    }
+    /**
+     * 处理 VNODE_CALL 节点
+     */
+    function genVNodeCall(node, context) {
+        var push = context.push, helper = context.helper;
+        var tag = node.tag, props = node.props, children = node.children, patchFlag = node.patchFlag, dynamicProps = node.dynamicProps, isComponent = node.isComponent;
+        // 返回 vnode 生成函数
+        var callHelper = getVNodeHelper(context.inSSR, isComponent);
+        push(helper(callHelper) + "(", node);
+        // 获取函数参数
+        var args = genNullableArgs([tag, props, children, patchFlag, dynamicProps]);
+        // 处理参数的填充
+        genNodeList(args, context);
+        push(")");
+    }
+    /**
+     * 处理 createXXXVnode 函数参数
+     */
+    function genNullableArgs(args) {
+        var i = args.length;
+        while (i--) {
+            if (args[i] != null)
+                break;
+        }
+        return args.slice(0, i + 1).map(function (arg) { return arg || "null"; });
+    }
+    /**
+     * 处理参数的填充
+     */
+    function genNodeList(nodes, context) {
+        var push = context.push; context.newline;
+        for (var i = 0; i < nodes.length; i++) {
+            var node = nodes[i];
+            // 字符串直接 push 即可
+            if (isString(node)) {
+                push(node);
+            }
+            // 数组需要 push "[" "]"
+            else if (isArray(node)) {
+                genNodeListAsArray(node, context);
+            }
+            // 对象需要区分 node 节点类型，递归处理
+            else {
+                genNode(node, context);
+            }
+            if (i < nodes.length - 1) {
+                push(', ');
+            }
+        }
+    }
+    function genNodeListAsArray(nodes, context) {
+        context.push("[");
+        genNodeList(nodes, context);
+        context.push("]");
+    }
+    /**
+     * 处理 TEXT 节点
+     */
+    function genText(node, context) {
+        context.push(JSON.stringify(node.content), node);
+    }
+    /**
+     * 复合表达式处理
+     */
+    function genCompoundExpression(node, context) {
+        for (var i = 0; i < node.children.length; i++) {
+            var child = node.children[i];
+            if (isString(child)) {
+                context.push(child);
+            }
+            else {
+                genNode(child, context);
+            }
+        }
+    }
+    /**
+     * {{}} 处理
+     */
+    function genInterpolation(node, context) {
+        var push = context.push, helper = context.helper;
+        push("".concat(helper(TO_DISPLAY_STRING), "("));
+        genNode(node.content, context);
+        push(")");
+    }
+    /**
+     * 表达式处理
+     */
+    function genExpression(node, context) {
+        var content = node.content, isStatic = node.isStatic;
+        context.push(isStatic ? JSON.stringify(content) : content, node);
+    }
+
+    /**
+     * 基础的 parse 方法，生成 AST
+     * @param content tempalte 模板
+     * @returns
+     */
+    function baseParse(content) {
+        // 创建 parser 对象，未解析器的上下文对象
+        var context = createParserContext(content);
+        var children = parseChildren(context, []);
+        return createRoot(children);
+    }
+    /**
+     * 创建解析器上下文
+     */
+    function createParserContext(content) {
+        // 合成 context 上下文对象
+        return {
+            source: content
+        };
+    }
+    function parseChildren(context, ancestors) {
+        // 存放所有 node节点数据的数组
+        var nodes = [];
+        /**
+         * 循环解析所有 node 节点，可以理解为对 token 的处理。
+         * 例如：<div>hello world</div>，此时的处理顺序为：
+         * 1. <div
+         * 2. >
+         * 3. hello world
+         * 4. </
+         * 5. div>
+         */
+        while (!isEnd(context, ancestors)) {
+            /**
+             * 模板源
+             */
+            var s = context.source;
+            // 定义 node 节点
+            var node = void 0;
+            if (startsWith(s, '{{')) {
+                node = parseInterpolation(context);
+            }
+            else if (s[0] === '<') {
+                // 以 < 开始，后面跟a-z 表示，这是一个标签的开始
+                if (/[a-z]/i.test(s[1])) {
+                    // 此时要处理 Element
+                    node = parseElement(context, ancestors);
+                }
+            }
+            if (!node) {
+                node = parseText(context);
+            }
+            pushNode(nodes, node);
+        }
+        return nodes;
+    }
+    /**
+     * 解析 Element 元素。例如：<div>
+     */
+    function parseElement(context, ancestors) {
+        // -- 先处理开始标签 --
+        var element = parseTag(context, 0 /* TagType.Start */);
+        //   //  -- 处理子节点 --
+        ancestors.push(element);
+        //   // 递归触发 parseChildren
+        var children = parseChildren(context, ancestors);
+        ancestors.pop();
+        //   // 为子节点赋值
+        element.children = children;
+        //   //  -- 最后处理结束标签 --
+        if (startsWithEndTagOpen(context.source, element.tag)) {
+            parseTag(context, 1 /* TagType.End */);
+        }
+        // 整个标签处理完成
+        return element;
+    }
+    /**
+     * 解析文本。
+     */
+    function parseText(context) {
+        /**
+         * 定义普通文本结束的标记
+         * 例如：hello world </div>，那么文本结束的标记就为 <
+         * PS：这也意味着如果你渲染了一个 <div> hell<o </div> 的标签，那么你将得到一个错误
+         */
+        var endTokens = ['<', '{{'];
+        // 计算普通文本结束的位置
+        var endIndex = context.source.length;
+        // 计算精准的 endIndex，计算的逻辑为：从 context.source 中分别获取 '<', '{{' 的下标，取最小值为 endIndex
+        for (var i = 0; i < endTokens.length; i++) {
+            var index = context.source.indexOf(endTokens[i], 1);
+            if (index !== -1 && endIndex > index) {
+                endIndex = index;
+            }
+        }
+        // 获取处理的文本内容
+        var content = parseTextData(context, endIndex);
+        return {
+            type: 2 /* NodeTypes.TEXT */,
+            content: content
+        };
+    }
+    /**
+     * 从指定位置（length）获取给定长度的文本数据。
+     */
+    function parseTextData(context, length) {
+        // 获取指定的文本数据
+        var rawText = context.source.slice(0, length);
+        // 《继续》对模板进行解析处理
+        advanceBy(context, length);
+        // 返回获取到的文本
+        return rawText;
+    }
+    /**
+     * 解析标签
+     */
+    function parseTag(context, type) {
+        // -- 处理标签开始部分 --
+        // 通过正则获取标签名
+        var match = /^<\/?([a-z][^\r\n\t\f />]*)/i.exec(context.source);
+        // 标签名字
+        var tag = match[1];
+        // 对模板进行解析处理
+        advanceBy(context, match[0].length);
+        //   // 属性与指令处理
+        advanceSpaces(context);
+        var props = parseAttributes(context, type);
+        //   // -- 处理标签结束部分 --
+        //   // 判断是否为自关闭标签，例如 <img />
+        var isSelfClosing = startsWith(context.source, '/>');
+        //   // 《继续》对模板进行解析处理，是自动标签则处理两个字符 /> ，不是则处理一个字符 >
+        advanceBy(context, isSelfClosing ? 2 : 1);
+        //   // 标签类型
+        var tagType = 0 /* ElementTypes.ELEMENT */;
+        return {
+            type: 1 /* NodeTypes.ELEMENT */,
+            tag: tag,
+            tagType: tagType,
+            // 属性与指令
+            props: props
+        };
+    }
+    /**
+     * 解析属性与指令
+     */
+    function parseAttributes(context, type) {
+        // 解析之后的 props 数组
+        var props = [];
+        // 属性名数组
+        var attributeNames = new Set();
+        // 循环解析，直到解析到标签结束（'>' || '/>'）为止
+        while (context.source.length > 0 &&
+            !startsWith(context.source, '>') &&
+            !startsWith(context.source, '/>')) {
+            // 具体某一条属性的处理
+            var attr = parseAttribute(context, attributeNames);
+            // 添加属性
+            if (type === 0 /* TagType.Start */) {
+                props.push(attr);
+            }
+            advanceSpaces(context);
+        }
+        return props;
+    }
+    /**
+     * 处理指定指令，返回指令节点
+     */
+    function parseAttribute(context, nameSet) {
+        // 获取属性名称。例如：v-if
+        var match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source);
+        var name = match[0];
+        // 添加当前的处理属性
+        nameSet.add(name);
+        advanceBy(context, name.length);
+        // 获取属性值。
+        var value = undefined;
+        // 解析模板，并拿到对应的属性值节点
+        if (/^[\t\r\n\f ]*=/.test(context.source)) {
+            advanceSpaces(context);
+            advanceBy(context, 1);
+            advanceSpaces(context);
+            value = parseAttributeValue(context);
+        }
+        // 针对 v- 的指令处理
+        if (/^(v-[A-Za-z0-9-]|:|\.|@|#)/.test(name)) {
+            // 获取指令名称
+            var match_1 = /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(name);
+            // 指令名。v-if 则获取 if
+            var dirName = match_1[1];
+            // TODO：指令参数  v-bind:arg
+            // let arg: any
+            // TODO：指令修饰符  v-on:click.modifiers
+            // const modifiers = match[3] ? match[3].slice(1).split('.') : []
+            return {
+                type: 7 /* NodeTypes.DIRECTIVE */,
+                name: dirName,
+                exp: value && {
+                    type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+                    content: value.content,
+                    isStatic: false,
+                    loc: value.loc
+                },
+                arg: undefined,
+                modifiers: undefined,
+                loc: {}
+            };
+        }
+        return {
+            type: 6 /* NodeTypes.ATTRIBUTE */,
+            name: name,
+            value: value && {
+                type: 2 /* NodeTypes.TEXT */,
+                content: value.content,
+                loc: value.loc
+            },
+            loc: {}
+        };
+    }
+    /**
+     * 获取属性（attr）的 value
+     */
+    function parseAttributeValue(context) {
+        var content = '';
+        // 判断是单引号还是双引号
+        var quote = context.source[0];
+        var isQuoted = quote === "\"" || quote === "'";
+        // 引号处理
+        if (isQuoted) {
+            advanceBy(context, 1);
+            // 获取结束的 index
+            var endIndex = context.source.indexOf(quote);
+            // 获取指令的值。例如：v-if="isShow"，则值为 isShow
+            if (endIndex === -1) {
+                content = parseTextData(context, context.source.length);
+            }
+            else {
+                content = parseTextData(context, endIndex);
+                advanceBy(context, 1);
+            }
+        }
+        return { content: content, isQuoted: isQuoted, loc: {} };
+    }
+    /**
+     * 是否以指定文本开头
+     */
+    function startsWith(source, searchString) {
+        return source.startsWith(searchString);
+    }
+    /**
+     * 判断是否为结束节点
+     */
+    function isEnd(context, ancestors) {
+        var s = context.source;
+        // 解析是否为结束标签
+        if (startsWith(s, '</')) {
+            for (var i = ancestors.length - 1; i >= 0; --i) {
+                if (startsWithEndTagOpen(s, ancestors[i].tag)) {
+                    return true;
+                }
+            }
+        }
+        return !s;
+    }
+    /**
+     * 前进一步。多次调用，每次调用都会处理一部分的模板内容
+     * 以 <div>hello world</div> 为例
+     * 1. <div
+     * 2. >
+     * 3. hello world
+     * 4. </div
+     * 5. >
+     */
+    function advanceBy(context, numberOfCharacters) {
+        // template 模板源
+        var source = context.source;
+        // 去除开始部分的无效数据
+        context.source = source.slice(numberOfCharacters);
+    }
+    /**
+     * nodes.push(node)
+     */
+    function pushNode(nodes, node) {
+        nodes.push(node);
+    }
+    /**
+     * 判断当前是否为《标签结束的开始》。比如 </div> 就是 div 标签结束的开始
+     * @param source 模板。例如：</div>
+     * @param tag 标签。例如：div
+     * @returns
+     */
+    function startsWithEndTagOpen(source, tag) {
+        return (startsWith(source, '</') &&
+            source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase() &&
+            /[\t\r\n\f />]/.test(source[2 + tag.length] || '>'));
+    }
+    /**
+     * 生成 root 节点
+     */
+    function createRoot(children) {
+        return {
+            type: 0 /* NodeTypes.ROOT */,
+            children: children,
+            // loc：位置，这个属性并不影响渲染，但是它必须存在，否则会报错。所以我们给了他一个 {}
+            loc: {}
+        };
+    }
+    /**
+     * 解析插值表达式 {{ xxx }}
+     */
+    function parseInterpolation(context) {
+        // open = {{
+        // close = }}
+        var _a = __read(['{{', '}}'], 2), open = _a[0], close = _a[1];
+        advanceBy(context, open.length);
+        // 获取插值表达式中间的值
+        var closeIndex = context.source.indexOf(close, open.length);
+        var preTrimContent = parseTextData(context, closeIndex);
+        var content = preTrimContent.trim();
+        advanceBy(context, close.length);
+        return {
+            type: 5 /* NodeTypes.INTERPOLATION */,
+            content: {
+                type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+                isStatic: false,
+                content: content
+            }
+        };
+    }
+    /**
+     * 前进非固定步数
+     */
+    function advanceSpaces(context) {
+        var match = /^[\t\r\n\f ]+/.exec(context.source);
+        if (match) {
+            advanceBy(context, match[0].length);
+        }
+    }
+
+    /**
+     * 单个元素的根节点
+     */
+    function isSingleElementRoot(root, child) {
+        var children = root.children;
+        return children.length === 1 && child.type === 1 /* NodeTypes.ELEMENT */;
+    }
+
+    /**
+     *
+     * @param root ast
+     * @param options
+     */
+    function transform(root, options) {
+        // 1.创建上下文
+        var context = createTransformContext(root, options);
+        // 按照深度优先依次处理 node 节点转化
+        traverseNode(root, context);
+        console.log('root', root);
+        createRootCodegen(root);
+        root.helpers = __spreadArray([], __read(context.helpers.keys()), false);
+        root.components = [];
+        root.directives = [];
+        root.imports = [];
+        root.hoists = [];
+        root.temps = [];
+        root.cached = [];
+    }
+    // 遍历所有的ast树，从子节点开始，依次执行nodeTransforms中的方法
+    function traverseNode(node, context) {
+        // 通过上下文记录当前正在处理的 node 节点
+        context.currentNode = node;
+        // 获取当前所有 node 节点的 transform 方法
+        var nodeTransforms = context.nodeTransforms;
+        // 存储转化函数的数组
+        var exitFns = [];
+        for (var i_1 = 0; i_1 < nodeTransforms.length; i_1++) {
+            var onExit = nodeTransforms[i_1](node, context);
+            if (onExit) {
+                // 指令的 transforms 返回为 数组，所以需要解构
+                if (isArray(onExit)) {
+                    exitFns.push.apply(exitFns, __spreadArray([], __read(onExit), false));
+                }
+                else {
+                    exitFns.push(onExit);
+                }
+            }
+            // 这个函数为啥要放到循环里面？？？？
+            if (!context.currentNode) {
+                // 节点已删除
+                return;
+            }
+            else {
+                // 节点更换
+                node = context.currentNode;
+            }
+        }
+        //  转化节点
+        switch (node.type) {
+            case 10 /* NodeTypes.IF_BRANCH */:
+            case 1 /* NodeTypes.ELEMENT */:
+            case 0 /* NodeTypes.ROOT */:
+                traverseChildren(node, context);
+                break;
+            // 处理插值表达式 {{}}
+            case 5 /* NodeTypes.INTERPOLATION */:
+                context.helper(TO_DISPLAY_STRING);
+                break;
+            // v-if 指令处理
+            case 9 /* NodeTypes.IF */:
+                for (var i_2 = 0; i_2 < node.branches.length; i_2++) {
+                    traverseNode(node.branches[i_2], context);
+                }
+                break;
+        }
+        // 在退出时执行 transform
+        context.currentNode = node;
+        var i = exitFns.length;
+        while (i--) {
+            exitFns[i]();
+        }
+    }
+    /**
+     * 循环处理子节点
+     */
+    function traverseChildren(parent, context) {
+        parent.children.forEach(function (node, index) {
+            context.parent = parent;
+            context.childIndex = index;
+            traverseNode(node, context);
+        });
+    }
+    function createTransformContext(root, _a) {
+        var _b = _a.nodeTransforms, nodeTransforms = _b === void 0 ? [] : _b;
+        var context = {
+            nodeTransforms: nodeTransforms,
+            root: root,
+            helpers: new Map(),
+            currentNode: root,
+            parent: null,
+            childIndex: 0,
+            helper: function (name) {
+                // 此处的逻辑是？
+                // 做静态标记？？？？
+                var count = context.helpers.get(name) || 0;
+                context.helpers.set(name, count + 1);
+                return name;
+            },
+            replaceNode: function (node) {
+                context.parent.children[context.childIndex] = context.currentNode = node;
+            }
+        };
+        return context;
+    }
+    /**
+     * 生成 root 节点下的 codegen
+     */
+    function createRootCodegen(root) {
+        var children = root.children;
+        // 仅支持一个根节点的处理
+        if (children.length === 1) {
+            // 获取单个根节点
+            var child = children[0];
+            if (isSingleElementRoot(root, child) && child.codegenNode) {
+                var codegenNode = child.codegenNode;
+                root.codegenNode = codegenNode;
+            }
+        }
+    }
+    /**
+     * 针对于指令的处理
+     * @param name 正则。匹配具体的指令
+     * @param fn 指令的具体处理方法，通常为闭包函数
+     * @returns 返回一个闭包函数
+     */
+    function createStructuralDirectiveTransform(name, fn) {
+        var matches = isString(name)
+            ? function (n) { return n === name; }
+            : function (n) { return name.test(n); };
+        return function (node, context) {
+            if (node.type === 1 /* NodeTypes.ELEMENT */) {
+                var props = node.props;
+                // 结构的转换与 v-slot 无关
+                if (node.tagType === 3 /* ElementTypes.TEMPLATE */ && props.some(isVSlot)) {
+                    return;
+                }
+                // 存储转化函数的数组
+                var exitFns = [];
+                // 遍历所有的 props
+                for (var i = 0; i < props.length; i++) {
+                    var prop = props[i];
+                    // 仅处理指令，并且该指令要匹配指定的正则
+                    if (prop.type === 7 /* NodeTypes.DIRECTIVE */ && matches(prop.name)) {
+                        // 删除结构指令以避免无限递归
+                        props.splice(i, 1);
+                        i--;
+                        // fn 会返回具体的指令函数
+                        var onExit = fn(node, prop, context);
+                        // 存储到数组中
+                        if (onExit)
+                            exitFns.push(onExit);
+                    }
+                }
+                // 返回包含所有函数的数组
+                return exitFns;
+            }
+        };
+    }
+
+    function createVNodeCall(context, tag, props, children) {
+        if (context) {
+            context.helper(CREATE_ELEMENT_VNODE);
+        }
+        return {
+            type: 13 /* NodeTypes.VNODE_CALL */,
+            tag: tag,
+            props: props,
+            children: children
+        };
+    }
+    /**
+     * return hello {{ msg }} 复合表达式
+     */
+    function createCompoundExpression(children, loc) {
+        return {
+            type: 8 /* NodeTypes.COMPOUND_EXPRESSION */,
+            loc: loc,
+            children: children
+        };
+    }
+    /**
+     * 创建条件表达式的节点
+     */
+    function createConditionalExpression(test, consequent, alternate, newline) {
+        if (newline === void 0) { newline = true; }
+        return {
+            type: 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */,
+            test: test,
+            consequent: consequent,
+            alternate: alternate,
+            newline: newline,
+            loc: {}
+        };
+    }
+    /**
+     * 创建调用表达式的节点
+     */
+    function createCallExpression(callee, args) {
+        return {
+            type: 14 /* NodeTypes.JS_CALL_EXPRESSION */,
+            loc: {},
+            callee: callee,
+            arguments: args
+        };
+    }
+    /**
+     * 创建简单的表达式节点
+     */
+    function createSimpleExpression(content, isStatic) {
+        return {
+            type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+            loc: {},
+            content: content,
+            isStatic: isStatic
+        };
+    }
+    /**
+     * 创建对象属性节点
+     */
+    function createObjectProperty(key, value) {
+        return {
+            type: 16 /* NodeTypes.JS_PROPERTY */,
+            loc: {},
+            key: isString(key) ? createSimpleExpression(key, true) : key,
+            value: value
+        };
+    }
+
+    var transformElement = function (node, context) {
+        return function postTransformElement() {
+            node = context.currentNode;
+            // 仅处理 ELEMENT 类型
+            if (node.type !== 1 /* NodeTypes.ELEMENT */) {
+                return;
+            }
+            var tag = node.tag;
+            var vnodeTag = "\"".concat(tag, "\"");
+            var vnodeProps = [];
+            var vnodeChildren = node.children;
+            node.codegenNode = createVNodeCall(context, vnodeTag, vnodeProps, vnodeChildren);
+        };
+    };
+
+    var transformText = function (node, context) {
+        if (node.type === 0 /* NodeTypes.ROOT */ ||
+            node.type === 1 /* NodeTypes.ELEMENT */ ||
+            node.type === 11 /* NodeTypes.FOR */ ||
+            node.type === 10 /* NodeTypes.IF_BRANCH */) {
+            return function () {
+                // 获取所有的子节点
+                var children = node.children;
+                // 当前容器
+                var currentContainer;
+                // 循环处理所有的子节点
+                for (var i = 0; i < children.length; i++) {
+                    var child = children[i];
+                    if (isText(child)) {
+                        // j = i + 1 表示下一个节点
+                        for (var j = i + 1; j < children.length; j++) {
+                            var next = children[j];
+                            // 当前节点 child 和 下一个节点 next 都是 Text 节点
+                            if (isText(next)) {
+                                if (!currentContainer) {
+                                    // 生成一个复合表达式节点
+                                    currentContainer = children[i] = createCompoundExpression([child], child.loc);
+                                }
+                                // 在 当前节点 child 和 下一个节点 next 中间，插入 "+" 号
+                                currentContainer.children.push(" + ", next);
+                                // 把下一个删除
+                                children.splice(j, 1);
+                                j--;
+                            }
+                            // 当前节点 child 是 Text 节点，下一个节点 next 不是 Text 节点，则把 currentContainer 置空即可
+                            else {
+                                currentContainer = undefined;
+                                break;
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    };
+
+    /**
+     * transformIf === exitFns。内部保存了所有 v-if、v-else、else-if 的处理函数
+     */
+    var transformIf = createStructuralDirectiveTransform(/^(if|else|else-if)$/, function (node, dir, context) {
+        return processIf(node, dir, context, function (ifNode, branch, isRoot) {
+            // TODO: 目前无需处理兄弟节点情况
+            var key = 0;
+            // 退出回调。当所有子节点都已完成时，完成codegenNode
+            return function () {
+                if (isRoot) {
+                    ifNode.codegenNode = createCodegenNodeForBranch(branch, key, context);
+                }
+            };
+        });
+    });
+    /**
+     * v-if 的转化处理
+     */
+    function processIf(node, dir, context, processCodegen) {
+        // 仅处理 v-if
+        if (dir.name === 'if') {
+            // 创建 branch 属性
+            var branch = createIfBranch(node, dir);
+            // 生成 if 指令节点，包含 branches
+            var ifNode = {
+                type: 9 /* NodeTypes.IF */,
+                loc: node.loc,
+                branches: [branch]
+            };
+            // 切换 currentVNode，即：当前处理节点为 ifNode
+            context.replaceNode(ifNode);
+            // 生成对应的 codegen 属性
+            if (processCodegen) {
+                return processCodegen(ifNode, branch, true);
+            }
+        }
+    }
+    /**
+     * 创建 if 指令的 branch 属性节点
+     */
+    function createIfBranch(node, dir) {
+        return {
+            type: 10 /* NodeTypes.IF_BRANCH */,
+            loc: node.loc,
+            condition: dir.exp,
+            children: [node]
+        };
+    }
+    /**
+     * 生成分支节点的 codegenNode
+     */
+    function createCodegenNodeForBranch(branch, keyIndex, context) {
+        if (branch.condition) {
+            return createConditionalExpression(branch.condition, createChildrenCodegenNode(branch, keyIndex), 
+            // 以注释的形式展示 v-if.
+            createCallExpression(context.helper(CREATE_COMMENT), ['"v-if"', 'true']));
+        }
+        else {
+            return createChildrenCodegenNode(branch, keyIndex);
+        }
+    }
+    /**
+     * 创建指定子节点的 codegen 节点
+     */
+    function createChildrenCodegenNode(branch, keyIndex) {
+        var keyProperty = createObjectProperty("key", createSimpleExpression("".concat(keyIndex), false));
+        var children = branch.children;
+        var firstChild = children[0];
+        var ret = firstChild.codegenNode;
+        var vnodeCall = getMemoedVNodeCall(ret);
+        // 填充 props
+        injectProp(vnodeCall, keyProperty);
+        return ret;
+    }
+
+    function baseCompile(template, options) {
+        if (options === void 0) { options = {}; }
+        var ast = baseParse(template.trim());
+        transform(ast, extend(options, {
+            nodeTransforms: [transformElement, transformText, transformIf]
+        }));
+        return generate(ast);
+    }
+
+    function compile(template, options) {
+        return baseCompile(template, options);
+    }
+
+    function compileToFunction(template, options) {
+        var code = compile(template, options).code;
+        var code1 = "\n    const _Vue = Vue\n\n    return function render(_ctx, _cache) {\n      with (_ctx) {\n        const { createElementVNode: _createElementVNode } = _Vue\n\n        return _createElementVNode(\"div\", [], [\" hello world \"])\n      }\n  }";
+        console.log('code1', code1 === code);
+        var render = new Function(code)();
+        return render;
+    }
+
     function injectHook(type, hook, target) {
         // 将 hook 注册到 组件实例中
         if (target) {
@@ -772,13 +1847,13 @@ var Vue = (function (exports) {
         // 组件不存在 render 时，才需要重新赋值
         if (!instance.render) {
             // 存在编辑器，并且组件中不包含 render 函数，同时包含 template 模板，则直接使用编辑器进行编辑，得到 render 函数
-            // if (compile && !Component.render) {
-            // 	if (Component.template) {
-            // 		// 这里就是 runtime 模块和 compile 模块结合点
-            // 		const template = Component.template
-            // 		Component.render = compile(template)
-            // 	}
-            // }
+            if (compileToFunction && !Component.render) {
+                if (Component.template) {
+                    // 这里就是 runtime 模块和 compile 模块结合点
+                    var template = Component.template;
+                    Component.render = compileToFunction(template);
+                }
+            }
             // 为 render 赋值
             instance.render = Component.render;
         }
@@ -817,6 +1892,27 @@ var Vue = (function (exports) {
      */
     function callHook(hook, proxy) {
         hook.bind(proxy)();
+    }
+
+    /**
+     * 创建 app 实例，这是一个闭包函数
+     */
+    function createAppAPI(render) {
+        return function createApp(rootComponent, rootProps) {
+            if (rootProps === void 0) { rootProps = null; }
+            var app = {
+                _component: rootComponent,
+                _container: null,
+                // 挂载方法
+                mount: function (rootContainer) {
+                    // 直接通过 createVNode 方法构建 vnode
+                    var vnode = createVNode(rootComponent, rootProps);
+                    // 通过 render 函数进行挂载
+                    render(vnode, rootContainer);
+                }
+            };
+            return app;
+        };
     }
 
     function createRenderer(options) {
@@ -1099,6 +2195,10 @@ var Vue = (function (exports) {
                 // 设置 文本子节点
                 hostSetElementText(el, vnode.children);
             }
+            else if (shapeFlag & 16 /* ShapeFlags.ARRAY_CHILDREN */) {
+                // 设置 Array 子节点
+                mountChildren(vnode.children, el, anchor);
+            }
             // 处理 props
             if (props) {
                 // 遍历 props 对象
@@ -1235,7 +2335,7 @@ var Vue = (function (exports) {
             }
             var type = newVNode.type, shapeFlag = newVNode.shapeFlag;
             switch (type) {
-                case Text$1:
+                case Text:
                     processText(oldVNode, newVNode, container, anchor);
                     break;
                 case Comment:
@@ -1271,7 +2371,8 @@ var Vue = (function (exports) {
             container._vnode = vnode;
         };
         return {
-            render: render
+            render: render,
+            createApp: createAppAPI(render)
         };
     }
     // https://en.wikipedia.org/wiki/Longest_increasing_subsequence
@@ -1525,463 +2626,57 @@ var Vue = (function (exports) {
         }
         (_a = ensureRenderer()).render.apply(_a, __spreadArray([], __read(args), false));
     };
-
-    /**
-     * 基础的 parse 方法，生成 AST
-     * @param content tempalte 模板
-     * @returns
-     */
-    function baseParse(content) {
-        // 创建 parser 对象，未解析器的上下文对象
-        var context = createParserContext(content);
-        var children = parseChildren(context, []);
-        return createRoot(children);
-    }
-    /**
-     * 创建解析器上下文
-     */
-    function createParserContext(content) {
-        // 合成 context 上下文对象
-        return {
-            source: content
-        };
-    }
-    function parseChildren(context, ancestors) {
-        // 存放所有 node节点数据的数组
-        var nodes = [];
-        /**
-         * 循环解析所有 node 节点，可以理解为对 token 的处理。
-         * 例如：<div>hello world</div>，此时的处理顺序为：
-         * 1. <div
-         * 2. >
-         * 3. hello world
-         * 4. </
-         * 5. div>
-         */
-        while (!isEnd(context, ancestors)) {
-            /**
-             * 模板源
-             */
-            var s = context.source;
-            // 定义 node 节点
-            var node = void 0;
-            if (startsWith(s, '{{')) ;
-            else if (s[0] === '<') {
-                // 以 < 开始，后面跟a-z 表示，这是一个标签的开始
-                if (/[a-z]/i.test(s[1])) {
-                    // 此时要处理 Element
-                    node = parseElement(context, ancestors);
-                }
-            }
-            if (!node) {
-                node = parseText(context);
-            }
-            pushNode(nodes, node);
+    var createApp = function () {
+        var _a;
+        var args = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            args[_i] = arguments[_i];
         }
-        return nodes;
-    }
-    /**
-     * 解析 Element 元素。例如：<div>
-     */
-    function parseElement(context, ancestors) {
-        // -- 先处理开始标签 --
-        var element = parseTag(context);
-        //   //  -- 处理子节点 --
-        ancestors.push(element);
-        //   // 递归触发 parseChildren
-        var children = parseChildren(context, ancestors);
-        ancestors.pop();
-        //   // 为子节点赋值
-        element.children = children;
-        //   //  -- 最后处理结束标签 --
-        if (startsWithEndTagOpen(context.source, element.tag)) {
-            parseTag(context);
-        }
-        // 整个标签处理完成
-        return element;
-    }
-    /**
-     * 解析文本。
-     */
-    function parseText(context) {
-        /**
-         * 定义普通文本结束的标记
-         * 例如：hello world </div>，那么文本结束的标记就为 <
-         * PS：这也意味着如果你渲染了一个 <div> hell<o </div> 的标签，那么你将得到一个错误
-         */
-        var endTokens = ['<', '{{'];
-        // 计算普通文本结束的位置
-        var endIndex = context.source.length;
-        // 计算精准的 endIndex，计算的逻辑为：从 context.source 中分别获取 '<', '{{' 的下标，取最小值为 endIndex
-        for (var i = 0; i < endTokens.length; i++) {
-            var index = context.source.indexOf(endTokens[i], 1);
-            if (index !== -1 && endIndex > index) {
-                endIndex = index;
-            }
-        }
-        // 获取处理的文本内容
-        var content = parseTextData(context, endIndex);
-        return {
-            type: 2 /* NodeTypes.TEXT */,
-            content: content
-        };
-    }
-    /**
-     * 从指定位置（length）获取给定长度的文本数据。
-     */
-    function parseTextData(context, length) {
-        // 获取指定的文本数据
-        var rawText = context.source.slice(0, length);
-        // 《继续》对模板进行解析处理
-        advanceBy(context, length);
-        // 返回获取到的文本
-        return rawText;
-    }
-    /**
-     * 解析标签
-     */
-    function parseTag(context, type) {
-        // -- 处理标签开始部分 --
-        // 通过正则获取标签名
-        var match = /^<\/?([a-z][^\r\n\t\f />]*)/i.exec(context.source);
-        // 标签名字
-        var tag = match[1];
-        // 对模板进行解析处理
-        advanceBy(context, match[0].length);
-        //   // 属性与指令处理
-        //   advanceSpaces(context)
-        //   let props = parseAttributes(context, type)
-        //   // -- 处理标签结束部分 --
-        //   // 判断是否为自关闭标签，例如 <img />
-        var isSelfClosing = startsWith(context.source, '/>');
-        //   // 《继续》对模板进行解析处理，是自动标签则处理两个字符 /> ，不是则处理一个字符 >
-        advanceBy(context, isSelfClosing ? 2 : 1);
-        //   // 标签类型
-        var tagType = 0 /* ElementTypes.ELEMENT */;
-        return {
-            type: 1 /* NodeTypes.ELEMENT */,
-            tag: tag,
-            tagType: tagType,
-            // 属性与指令
-            props: []
-        };
-    }
-    /**
-     * 是否以指定文本开头
-     */
-    function startsWith(source, searchString) {
-        return source.startsWith(searchString);
-    }
-    /**
-     * 判断是否为结束节点
-     */
-    function isEnd(context, ancestors) {
-        var s = context.source;
-        // 解析是否为结束标签
-        if (startsWith(s, '</')) {
-            for (var i = ancestors.length - 1; i >= 0; --i) {
-                if (startsWithEndTagOpen(s, ancestors[i].tag)) {
-                    return true;
-                }
-            }
-        }
-        return !s;
-    }
-    /**
-     * 前进一步。多次调用，每次调用都会处理一部分的模板内容
-     * 以 <div>hello world</div> 为例
-     * 1. <div
-     * 2. >
-     * 3. hello world
-     * 4. </div
-     * 5. >
-     */
-    function advanceBy(context, numberOfCharacters) {
-        // template 模板源
-        var source = context.source;
-        // 去除开始部分的无效数据
-        context.source = source.slice(numberOfCharacters);
-    }
-    /**
-     * nodes.push(node)
-     */
-    function pushNode(nodes, node) {
-        nodes.push(node);
-    }
-    /**
-     * 判断当前是否为《标签结束的开始》。比如 </div> 就是 div 标签结束的开始
-     * @param source 模板。例如：</div>
-     * @param tag 标签。例如：div
-     * @returns
-     */
-    function startsWithEndTagOpen(source, tag) {
-        return (startsWith(source, '</') &&
-            source.slice(2, 2 + tag.length).toLowerCase() === tag.toLowerCase() &&
-            /[\t\r\n\f />]/.test(source[2 + tag.length] || '>'));
-    }
-    /**
-     * 生成 root 节点
-     */
-    function createRoot(children) {
-        return {
-            type: 0 /* NodeTypes.ROOT */,
-            children: children,
-            // loc：位置，这个属性并不影响渲染，但是它必须存在，否则会报错。所以我们给了他一个 {}
-            loc: {}
-        };
-    }
-
-    /**
-     * 单个元素的根节点
-     */
-    function isSingleElementRoot(root, child) {
-        var children = root.children;
-        return children.length === 1 && child.type === 1 /* NodeTypes.ELEMENT */;
-    }
-
-    /**
-     *
-     * @param root ast
-     * @param options
-     */
-    function transform(root, options) {
-        // 1.创建上下文
-        var context = createTransformContext(root, options);
-        // 按照深度优先依次处理 node 节点转化
-        traverseNode(root, context);
-        console.log('root', root);
-        createRootCodegen(root);
-        root.helpers = __spreadArray([], __read(context.helpers.keys()), false);
-        root.components = [];
-        root.directives = [];
-        root.imports = [];
-        root.hoists = [];
-        root.temps = [];
-        root.cached = [];
-    }
-    // 遍历所有的ast树，从子节点开始，依次执行nodeTransforms中的方法
-    function traverseNode(node, context) {
-        // 通过上下文记录当前正在处理的 node 节点
-        context.currentNode = node;
-        // 获取当前所有 node 节点的 transform 方法
-        var nodeTransforms = context.nodeTransforms;
-        // 存储转化函数的数组
-        var exitFns = [];
-        for (var i_1 = 0; i_1 < nodeTransforms.length; i_1++) {
-            var onExit = nodeTransforms[i_1](node, context);
-            if (onExit) {
-                // 指令的 transforms 返回为 数组，所以需要解构
-                if (isArray(onExit)) {
-                    exitFns.push.apply(exitFns, __spreadArray([], __read(onExit), false));
-                }
-                else {
-                    exitFns.push(onExit);
-                }
-            }
-            // 这个函数为啥要放到循环里面？？？？
-            if (!context.currentNode) {
-                // 节点已删除
+        var app = (_a = ensureRenderer()).createApp.apply(_a, __spreadArray([], __read(args), false));
+        // 获取到 mount 挂载方法
+        var mount = app.mount;
+        // 对该方法进行重构，标准化 container，在重新触发 mount 进行挂载
+        app.mount = function (containerOrSelector) {
+            var container = normalizeContainer(containerOrSelector);
+            if (!container)
                 return;
-            }
-            else {
-                // 节点更换
-                node = context.currentNode;
-            }
-        }
-        //  转化节点
-        switch (node.type) {
-            case 10 /* NodeTypes.IF_BRANCH */:
-            case 1 /* NodeTypes.ELEMENT */:
-            case 0 /* NodeTypes.ROOT */:
-                traverseChildren(node, context);
-                break;
-            // 处理插值表达式 {{}}
-            // case NodeTypes.INTERPOLATION:
-            //   context.helper(TO_DISPLAY_STRING)
-            //   break
-            // // v-if 指令处理
-            // case NodeTypes.IF:
-            //   for (let i = 0; i < node.branches.length; i++) {
-            //     traverseNode(node.branches[i], context)
-            //   }
-            //   break
-        }
-        // 在退出时执行 transform
-        context.currentNode = node;
-        var i = exitFns.length;
-        while (i--) {
-            exitFns[i]();
-        }
-    }
-    /**
-     * 循环处理子节点
-     */
-    function traverseChildren(parent, context) {
-        parent.children.forEach(function (node, index) {
-            context.parent = parent;
-            context.childIndex = index;
-            traverseNode(node, context);
-        });
-    }
-    function createTransformContext(root, _a) {
-        var _b = _a.nodeTransforms, nodeTransforms = _b === void 0 ? [] : _b;
-        var context = {
-            nodeTransforms: nodeTransforms,
-            root: root,
-            helpers: new Map(),
-            currentNode: root,
-            parent: null,
-            childIndex: 0,
-            helper: function (name) {
-                // 此处的逻辑是？
-                // 做静态标记？？？？
-                var count = context.helpers.get(name) || 0;
-                context.helpers.set(name, count + 1);
-                return name;
-            },
-            replaceNode: function (node) {
-                context.parent.children[context.childIndex] = context.currentNode = node;
-            }
+            mount(container);
         };
-        return context;
-    }
-    /**
-     * 生成 root 节点下的 codegen
-     */
-    function createRootCodegen(root) {
-        var children = root.children;
-        // 仅支持一个根节点的处理
-        if (children.length === 1) {
-            // 获取单个根节点
-            var child = children[0];
-            if (isSingleElementRoot(root, child) && child.codegenNode) {
-                var codegenNode = child.codegenNode;
-                root.codegenNode = codegenNode;
-            }
-        }
-    }
-
-    var _a;
-    var CREATE_ELEMENT_VNODE = Symbol('createElementVNode');
-    var CREATE_VNODE = Symbol('createVNode');
-    var TO_DISPLAY_STRING = Symbol('toDisplayString');
-    var CREATE_COMMENT = Symbol("createCommentVNode");
-    /**
-     * const {xxx} = Vue
-     * 即：从 Vue 中可以被导出的方法，我们这里统一使用  createVNode
-     */
-    (_a = {},
-        // 在 renderer 中，通过 export { createVNode as createElementVNode }
-        _a[CREATE_ELEMENT_VNODE] = 'createElementVNode',
-        _a[CREATE_VNODE] = 'createVNode',
-        _a[TO_DISPLAY_STRING] = 'toDisplayString',
-        _a[CREATE_COMMENT] = 'createCommentVNode',
-        _a);
-
-    function createVNodeCall(context, tag, props, children) {
-        if (context) {
-            context.helper(CREATE_ELEMENT_VNODE);
-        }
-        return {
-            type: 13 /* NodeTypes.VNODE_CALL */,
-            tag: tag,
-            props: props,
-            children: children
-        };
-    }
-    /**
-     * return hello {{ msg }} 复合表达式
-     */
-    function createCompoundExpression(children, loc) {
-        return {
-            type: 8 /* NodeTypes.COMPOUND_EXPRESSION */,
-            loc: loc,
-            children: children
-        };
-    }
-
-    var transformElement = function (node, context) {
-        return function postTransformElement() {
-            node = context.currentNode;
-            // 仅处理 ELEMENT 类型
-            if (node.type !== 1 /* NodeTypes.ELEMENT */) {
-                return;
-            }
-            var tag = node.tag;
-            var vnodeTag = "\"".concat(tag, "\"");
-            var vnodeProps = [];
-            var vnodeChildren = node.children;
-            node.codegenNode = createVNodeCall(context, vnodeTag, vnodeProps, vnodeChildren);
-        };
+        return app;
     };
-
-    function isText(node) {
-        return node.type === 5 /* NodeTypes.INTERPOLATION */ || node.type === 2 /* NodeTypes.TEXT */;
-    }
-
-    var transformText = function (node, context) {
-        if (node.type === 0 /* NodeTypes.ROOT */ ||
-            node.type === 1 /* NodeTypes.ELEMENT */ ||
-            node.type === 11 /* NodeTypes.FOR */ ||
-            node.type === 10 /* NodeTypes.IF_BRANCH */) {
-            return function () {
-                // 获取所有的子节点
-                var children = node.children;
-                // 当前容器
-                var currentContainer;
-                // 循环处理所有的子节点
-                for (var i = 0; i < children.length; i++) {
-                    var child = children[i];
-                    if (isText(child)) {
-                        // j = i + 1 表示下一个节点
-                        for (var j = i + 1; j < children.length; j++) {
-                            var next = children[j];
-                            // 当前节点 child 和 下一个节点 next 都是 Text 节点
-                            if (isText(next)) {
-                                if (!currentContainer) {
-                                    // 生成一个复合表达式节点
-                                    currentContainer = children[i] = createCompoundExpression([child], child.loc);
-                                }
-                                // 在 当前节点 child 和 下一个节点 next 中间，插入 "+" 号
-                                currentContainer.children.push(" + ", next);
-                                // 把下一个删除
-                                children.splice(j, 1);
-                                j--;
-                            }
-                            // 当前节点 child 是 Text 节点，下一个节点 next 不是 Text 节点，则把 currentContainer 置空即可
-                            else {
-                                currentContainer = undefined;
-                                break;
-                            }
-                        }
-                    }
-                }
-            };
+    /**
+     * 标准化 container 容器
+     */
+    function normalizeContainer(container) {
+        if (isString(container)) {
+            var res = document.querySelector(container);
+            return res;
         }
-    };
-
-    function baseCompile(template, options) {
-        if (options === void 0) { options = {}; }
-        var ast = baseParse(template.trim());
-        console.log('ast before', JSON.stringify(ast));
-        transform(ast, extend(options, {
-            nodeTransforms: [transformElement, transformText]
-        }));
-        console.log('ast after', JSON.stringify(ast));
-        return ast;
+        return container;
     }
 
-    function compile(template, options) {
-        return baseCompile(template, options);
-    }
-
-    exports.compile = compile;
+    exports.Comment = Comment;
+    exports.EMPTY_OBJ = EMPTY_OBJ;
+    exports.Fragment = Fragment;
+    exports.Text = Text;
+    exports.compile = compileToFunction;
     exports.computed = computed;
+    exports.createApp = createApp;
+    exports.createElementVNode = createVNode;
+    exports.createRenderer = createRenderer;
     exports.effect = effect;
+    exports.extend = extend;
     exports.h = h;
+    exports.hasChanged = hasChanged;
+    exports.isArray = isArray;
+    exports.isFunction = isFunction;
+    exports.isObject = isObject;
+    exports.isOn = isOn;
+    exports.isString = isString;
     exports.reactive = reactive;
     exports.ref = ref;
     exports.render = render;
+    exports.toDisplayString = toDisplayString;
     exports.watch = watch;
     exports.watchEffect = watchEffect;
 

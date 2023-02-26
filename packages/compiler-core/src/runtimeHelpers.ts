@@ -12,5 +12,6 @@ export const helperNameMap = {
   [CREATE_ELEMENT_VNODE]: 'createElementVNode',
   [CREATE_VNODE]: 'createVNode',
   [TO_DISPLAY_STRING]: 'toDisplayString',
-  [CREATE_COMMENT]: 'createCommentVNode'
+  [CREATE_COMMENT]: 'createCommentVNode',
+  [TO_DISPLAY_STRING]: 'toDisplayString'
 }

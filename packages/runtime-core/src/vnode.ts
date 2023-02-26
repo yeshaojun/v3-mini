@@ -21,7 +21,6 @@ export interface VNode {
 export function createVNode(type, props, children?): VNode {
   // type是组件？
   // 暂不考虑
-
   // 通过 bit 位处理 shapeFlag 类型
   const shapeFlag = isString(type)
     ? ShapeFlags.ELEMENT
@@ -38,6 +37,8 @@ export function createVNode(type, props, children?): VNode {
   }
   return createBaseVNode(type, props, children, shapeFlag)
 }
+
+export { createVNode as createElementVNode }
 
 /**
  * 构建基础 vnode

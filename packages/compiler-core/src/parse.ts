@@ -58,7 +58,7 @@ function parseChildren(context: ParserContext, ancestors) {
     // 定义 node 节点
     let node
     if (startsWith(s, '{{')) {
-      // node = parseInterpolation(context)
+      node = parseInterpolation(context)
     } else if (s[0] === '<') {
       // 以 < 开始，后面跟a-z 表示，这是一个标签的开始
       if (/[a-z]/i.test(s[1])) {
@@ -157,8 +157,8 @@ function parseTag(context: any, type: TagType): any {
   advanceBy(context, match[0].length)
 
   //   // 属性与指令处理
-  //   advanceSpaces(context)
-  //   let props = parseAttributes(context, type)
+  advanceSpaces(context)
+  let props = parseAttributes(context, type)
 
   //   // -- 处理标签结束部分 --
 
@@ -175,8 +175,126 @@ function parseTag(context: any, type: TagType): any {
     tag,
     tagType,
     // 属性与指令
-    props: []
+    props: props
   }
+}
+
+/**
+ * 解析属性与指令
+ */
+function parseAttributes(context, type) {
+  // 解析之后的 props 数组
+  const props: any = []
+  // 属性名数组
+  const attributeNames = new Set<string>()
+
+  // 循环解析，直到解析到标签结束（'>' || '/>'）为止
+  while (
+    context.source.length > 0 &&
+    !startsWith(context.source, '>') &&
+    !startsWith(context.source, '/>')
+  ) {
+    // 具体某一条属性的处理
+    const attr = parseAttribute(context, attributeNames)
+    // 添加属性
+    if (type === TagType.Start) {
+      props.push(attr)
+    }
+    advanceSpaces(context)
+  }
+  return props
+}
+
+/**
+ * 处理指定指令，返回指令节点
+ */
+function parseAttribute(context: ParserContext, nameSet: Set<string>) {
+  // 获取属性名称。例如：v-if
+  const match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source)!
+  const name = match[0]
+  // 添加当前的处理属性
+  nameSet.add(name)
+
+  advanceBy(context, name.length)
+
+  // 获取属性值。
+  let value: any = undefined
+
+  // 解析模板，并拿到对应的属性值节点
+  if (/^[\t\r\n\f ]*=/.test(context.source)) {
+    advanceSpaces(context)
+    advanceBy(context, 1)
+    advanceSpaces(context)
+    value = parseAttributeValue(context)
+  }
+
+  // 针对 v- 的指令处理
+  if (/^(v-[A-Za-z0-9-]|:|\.|@|#)/.test(name)) {
+    // 获取指令名称
+    const match =
+      /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(
+        name
+      )!
+
+    // 指令名。v-if 则获取 if
+    let dirName = match[1]
+    // TODO：指令参数  v-bind:arg
+    // let arg: any
+
+    // TODO：指令修饰符  v-on:click.modifiers
+    // const modifiers = match[3] ? match[3].slice(1).split('.') : []
+
+    return {
+      type: NodeTypes.DIRECTIVE,
+      name: dirName,
+      exp: value && {
+        type: NodeTypes.SIMPLE_EXPRESSION,
+        content: value.content,
+        isStatic: false,
+        loc: value.loc
+      },
+      arg: undefined,
+      modifiers: undefined,
+      loc: {}
+    }
+  }
+
+  return {
+    type: NodeTypes.ATTRIBUTE,
+    name,
+    value: value && {
+      type: NodeTypes.TEXT,
+      content: value.content,
+      loc: value.loc
+    },
+    loc: {}
+  }
+}
+
+/**
+ * 获取属性（attr）的 value
+ */
+function parseAttributeValue(context: ParserContext) {
+  let content = ''
+
+  // 判断是单引号还是双引号
+  const quote = context.source[0]
+  const isQuoted = quote === `"` || quote === `'`
+  // 引号处理
+  if (isQuoted) {
+    advanceBy(context, 1)
+    // 获取结束的 index
+    const endIndex = context.source.indexOf(quote)
+    // 获取指令的值。例如：v-if="isShow"，则值为 isShow
+    if (endIndex === -1) {
+      content = parseTextData(context, context.source.length)
+    } else {
+      content = parseTextData(context, endIndex)
+      advanceBy(context, 1)
+    }
+  }
+
+  return { content, isQuoted, loc: {} }
 }
 
 /**
@@ -249,5 +367,42 @@ export function createRoot(children) {
     children,
     // loc：位置，这个属性并不影响渲染，但是它必须存在，否则会报错。所以我们给了他一个 {}
     loc: {}
+  }
+}
+
+/**
+ * 解析插值表达式 {{ xxx }}
+ */
+function parseInterpolation(context: ParserContext) {
+  // open = {{
+  // close = }}
+  const [open, close] = ['{{', '}}']
+
+  advanceBy(context, open.length)
+
+  // 获取插值表达式中间的值
+  const closeIndex = context.source.indexOf(close, open.length)
+  const preTrimContent = parseTextData(context, closeIndex)
+  const content = preTrimContent.trim()
+
+  advanceBy(context, close.length)
+
+  return {
+    type: NodeTypes.INTERPOLATION,
+    content: {
+      type: NodeTypes.SIMPLE_EXPRESSION,
+      isStatic: false,
+      content
+    }
+  }
+}
+
+/**
+ * 前进非固定步数
+ */
+function advanceSpaces(context: ParserContext): void {
+  const match = /^[\t\r\n\f ]+/.exec(context.source)
+  if (match) {
+    advanceBy(context, match[0].length)
   }
 }

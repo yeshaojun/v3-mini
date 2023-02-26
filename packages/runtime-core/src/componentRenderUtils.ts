@@ -1,5 +1,5 @@
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
-import { createVNode } from './vnode'
+import { createVNode, Text } from './vnode'
 
 /**
  * 标准化 VNode
