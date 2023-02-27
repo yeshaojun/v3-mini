@@ -17,6 +17,10 @@
     const template = `<div> hello world </div>`
     // 生成 render 函数
     const renderFn = compile(template)
+
+    // compile生成一个render函数，该函数用于创建虚拟节点
+    // 上述编译过程可以写成 () => h('div', {}, 'hello word')
+    // 组件一定要有render,其他的可以不要
     console.log('ast', renderFn)
     // 创建组件
     const component = {

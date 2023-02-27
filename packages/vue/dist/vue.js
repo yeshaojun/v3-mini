@@ -644,6 +644,9 @@ var Vue = (function (exports) {
     function isSameVNodeType(n1, n2) {
         return n1.type === n2.type && n1.key === n2.key;
     }
+    function createCommentVNode(text) {
+        return createVNode(Comment, null, text);
+    }
 
     function h(type, propsOrChildren, children) {
         var l = arguments.length;
@@ -2640,6 +2643,11 @@ var Vue = (function (exports) {
             var container = normalizeContainer(containerOrSelector);
             if (!container)
                 return;
+            var component = app._component;
+            if (!isFunction(component) && !component.render && !component.template) {
+                component.template = "<div>".concat(container.innerHTML, "</div>");
+            }
+            container.innerHTML = '';
             mount(container);
         };
         return app;
@@ -2662,6 +2670,7 @@ var Vue = (function (exports) {
     exports.compile = compileToFunction;
     exports.computed = computed;
     exports.createApp = createApp;
+    exports.createCommentVNode = createCommentVNode;
     exports.createElementVNode = createVNode;
     exports.createRenderer = createRenderer;
     exports.effect = effect;

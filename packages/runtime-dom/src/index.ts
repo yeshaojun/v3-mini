@@ -1,6 +1,6 @@
 import { createRenderer } from '@vue/runtime-core'
 import { nodeOps } from './nodeOps'
-import { extend, isString } from '@vue/shared'
+import { extend, isFunction, isString } from '@vue/shared'
 import { patchProp } from './patchProp'
 const rendererOptions = extend({ patchProp }, nodeOps)
 
@@ -22,6 +22,11 @@ export const createApp = (...args) => {
   app.mount = (containerOrSelector: Element | string) => {
     const container = normalizeContainer(containerOrSelector)
     if (!container) return
+    const component = app._component
+    if (!isFunction(component) && !component.render && !component.template) {
+      component.template = `<div>${container.innerHTML}</div>`
+    }
+    container.innerHTML = ''
     mount(container)
   }
 

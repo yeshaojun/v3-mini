@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="../dist/vue.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>{{msg}}</h1>
+        <input type="text" v-model="todo" />
+        <button @click="add">add todo</button>
+      </header>
+      <main>
+        <ul>
+          <li v-for="(item, index) in list" :key="item.id">
+            {{ item.name }}
+            <button @click="remove(index)">remove todo</button>
+          </li>
+        </ul>
+      </main>
+    </div>
+    <script>
+      const { createApp } = Vue
+      const APP = {
+        data() {
+          return {
+            list: [],
+            todo: ""
+          }
+        },
+        setup(props) {
+            const msg = Vue.ref('hello')
+            return {
+                msg
+            }
+        },
+        mounted() {
+            this.list = [{
+                name: "吃饭",
+                id: 1
+            }]
+        },
+        methods: {
+            add() {
+                this.list.push({
+                    name: this.todo,
+                    id: this.list[this.list.length -1].id ++ 
+                })
+            },
+            remove(index) {
+               this.list.splice(index, 1)
+            }
+        },
+      }
+      const app = createApp(APP)
+      app.mount('#app')
+    </script>
+  </body>
+</html>
