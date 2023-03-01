@@ -10,26 +10,18 @@
 
   <body>
     <div id="app">
-      hello world{{msg}}
     </div>
   </body>
   <script>
     const { createApp } = Vue
     const APP = {
-    //   template: `<div>hello world  <span v-if="isShow">{{msg }}</span></div>`,
+      template: `<div><ul><li v-for="item in list" :key="item">{{item}}</li></ul></div>`,
       data() {
         return {
-          msg: '你好，世界',
-          isShow: false
+          list: [1,2,3,4,5]
         }
       },
-      created() {
-        setTimeout(() => {
-          this.isShow = true
-        }, 2000)
-      }
     }
-
     const app = createApp(APP)
     app.mount('#app')
   </script>

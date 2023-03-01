@@ -1233,7 +1233,8 @@ var Vue = (function (exports) {
             // 获取指令名称
             var match_1 = /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(name);
             // 指令名。v-if 则获取 if
-            var dirName = match_1[1];
+            var dirName = match_1[1] ||
+                (startsWith(name, ':') ? 'bind' : startsWith(name, '@') ? 'on' : 'slot');
             // TODO：指令参数  v-bind:arg
             // let arg: any
             // TODO：指令修饰符  v-on:click.modifiers
@@ -1382,6 +1383,19 @@ var Vue = (function (exports) {
             advanceBy(context, match[0].length);
         }
     }
+    // "const _Vue = Vue
+    // return function render(_ctx, _cache) {
+    //   with (_ctx) {
+    //     const { renderList: _renderList, Fragment: _Fragment, openBlock: _openBlock, createElementBlock: _createElementBlock, toDisplayString: _toDisplayString, createElementVNode: _createElementVNode } = _Vue
+    //     return (_openBlock(), _createElementBlock("div", null, [
+    //       _createElementVNode("ul", null, [
+    //         (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(list, (item) => {
+    //           return (_openBlock(), _createElementBlock("li", { key: item }, _toDisplayString(item), 1 /* TEXT */))
+    //         }), 128 /* KEYED_FRAGMENT */))
+    //       ])
+    //     ]))
+    //   }
+    // }"
 
     /**
      * 单个元素的根节点
