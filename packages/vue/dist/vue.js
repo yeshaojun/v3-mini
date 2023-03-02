@@ -711,6 +711,7 @@ var Vue = (function (exports) {
     var CREATE_VNODE = Symbol('createVNode');
     var TO_DISPLAY_STRING = Symbol('toDisplayString');
     var CREATE_COMMENT = Symbol("createCommentVNode");
+    var RENDER_LIST = Symbol("renderList");
     /**
      * const {xxx} = Vue
      * 即：从 Vue 中可以被导出的方法，我们这里统一使用  createVNode
@@ -722,6 +723,7 @@ var Vue = (function (exports) {
         _a[TO_DISPLAY_STRING] = 'toDisplayString',
         _a[CREATE_COMMENT] = 'createCommentVNode',
         _a[TO_DISPLAY_STRING] = 'toDisplayString',
+        _a[RENDER_LIST] = 'renderList',
         _a);
 
     function isText(node) {
@@ -1691,6 +1693,48 @@ var Vue = (function (exports) {
         }
     };
 
+    var transformFor = createStructuralDirectiveTransform('for', function (node, dir, context) {
+        return processFor(node, dir, context, function (forNode) {
+            var renderExp = createCallExpression(context.helper(RENDER_LIST), [
+                forNode.source
+            ]);
+            return function () {
+                forNode.codegenNode = createVNodeCall(context, 'Fragment', undefined, renderExp);
+            };
+        });
+    });
+    function processFor(node, dir, context, processCodegen) {
+        if (dir.name === 'for') {
+            var forNode = {
+                type: 11 /* NodeTypes.FOR */,
+                loc: node.loc
+                //   branches: [branch]
+            };
+            context.replaceNode(forNode);
+            // 生成对应的 codegen 属性
+            if (processCodegen) {
+                return processCodegen(forNode);
+            }
+        }
+    }
+    // export const transformIf = createStructuralDirectiveTransform(
+    //     /^(if|else|else-if)$/,
+    //     (node, dir, context) => {
+    //       return processIf(node, dir, context, (ifNode, branch, isRoot) => {
+    //         // TODO: 目前无需处理兄弟节点情况
+    //         let key = 0
+    //         // 退出回调。当所有子节点都已完成时，完成codegenNode
+    //         return () => {
+    //           if (isRoot) {
+    //             ifNode.codegenNode = createCodegenNodeForBranch(branch, key, context)
+    //           } else {
+    //             // TODO: 非根
+    //           }
+    //         }
+    //       })
+    //     }
+    //   )
+
     /**
      * transformIf === exitFns。内部保存了所有 v-if、v-else、else-if 的处理函数
      */
@@ -1770,7 +1814,12 @@ var Vue = (function (exports) {
         if (options === void 0) { options = {}; }
         var ast = baseParse(template.trim());
         transform(ast, extend(options, {
-            nodeTransforms: [transformElement, transformText, transformIf]
+            nodeTransforms: [
+                transformElement,
+                transformText,
+                transformIf,
+                transformFor
+            ]
         }));
         return generate(ast);
     }
