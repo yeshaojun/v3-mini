@@ -770,6 +770,9 @@ var Vue = (function (exports) {
     function getMemoedVNodeCall(node) {
         return node;
     }
+    function isTemplateNode(node) {
+        return (node.type === 1 /* NodeTypes.ELEMENT */ && node.tagType === 3 /* ElementTypes.TEMPLATE */);
+    }
 
     var aliasHelper = function (s) { return "".concat(helperNameMap[s], ": _").concat(helperNameMap[s]); };
     function createCodegenContext(ast) {
@@ -1708,8 +1711,10 @@ var Vue = (function (exports) {
             var renderExp = createCallExpression(context.helper(RENDER_LIST), [
                 forNode.source
             ]);
+            forNode.codegenNode = createVNodeCall(context, FRAGMENT, undefined, renderExp);
             return function () {
-                forNode.codegenNode = createVNodeCall(context, Fragment, undefined, renderExp);
+                forNode.children;
+                debugger;
             };
         });
     });
@@ -1719,7 +1724,8 @@ var Vue = (function (exports) {
             var forNode = {
                 type: 11 /* NodeTypes.FOR */,
                 loc: node.loc,
-                source: parseResult === null || parseResult === void 0 ? void 0 : parseResult.source
+                source: parseResult === null || parseResult === void 0 ? void 0 : parseResult.source,
+                children: isTemplateNode(node) ? node.children : [node]
                 //   branches: [branch]
             };
             context.replaceNode(forNode);

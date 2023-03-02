@@ -1,4 +1,4 @@
-import { Fragment } from '@vue/runtime-core'
+import { FRAGMENT } from '../runtimeHelpers'
 import {
   createCallExpression,
   createSimpleExpression,
@@ -10,6 +10,7 @@ import {
   createStructuralDirectiveTransform,
   TransformContext
 } from '../transform'
+import { isTemplateNode } from '../utils'
 
 const forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/
 export const transformFor = createStructuralDirectiveTransform(
@@ -19,13 +20,15 @@ export const transformFor = createStructuralDirectiveTransform(
       const renderExp = createCallExpression(context.helper(RENDER_LIST), [
         forNode.source
       ])
+      forNode.codegenNode = createVNodeCall(
+        context,
+        FRAGMENT,
+        undefined,
+        renderExp
+      )
       return () => {
-        forNode.codegenNode = createVNodeCall(
-          context,
-          Fragment,
-          undefined,
-          renderExp
-        )
+        const { children } = forNode
+        debugger
       }
     })
   }
@@ -42,7 +45,8 @@ export function processFor(
     const forNode = {
       type: NodeTypes.FOR,
       loc: node.loc,
-      source: parseResult?.source
+      source: parseResult?.source,
+      children: isTemplateNode(node) ? node.children : [node]
       //   branches: [branch]
     }
     context.replaceNode(forNode)

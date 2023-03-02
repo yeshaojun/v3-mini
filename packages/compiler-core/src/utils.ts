@@ -1,5 +1,5 @@
 import { isString } from '@vue/shared'
-import { NodeTypes } from './ast'
+import { ElementTypes, NodeTypes } from './ast'
 import { CREATE_ELEMENT_VNODE, CREATE_VNODE } from './runtimeHelpers'
 
 export function isText(node) {
@@ -47,4 +47,10 @@ export function injectProp(node, prop) {
  */
 export function getMemoedVNodeCall(node) {
   return node
+}
+
+export function isTemplateNode(node) {
+  return (
+    node.type === NodeTypes.ELEMENT && node.tagType === ElementTypes.TEMPLATE
+  )
 }
