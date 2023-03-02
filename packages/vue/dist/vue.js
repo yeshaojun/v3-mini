@@ -99,6 +99,7 @@ var Vue = (function (exports) {
      * 是否 on 开头
      */
     var isOn = function (key) { return onRE.test(key); };
+    var isSymbol = function (val) { return typeof val === 'symbol'; };
 
     var createDep = function (effects) {
         var dep = new Set(effects);
@@ -707,6 +708,7 @@ var Vue = (function (exports) {
     }
 
     var _a;
+    var FRAGMENT = Symbol("Fragment");
     var CREATE_ELEMENT_VNODE = Symbol('createElementVNode');
     var CREATE_VNODE = Symbol('createVNode');
     var TO_DISPLAY_STRING = Symbol('toDisplayString');
@@ -717,6 +719,7 @@ var Vue = (function (exports) {
      * 即：从 Vue 中可以被导出的方法，我们这里统一使用  createVNode
      */
     var helperNameMap = (_a = {},
+        _a[FRAGMENT] = "Fragment",
         // 在 renderer 中，通过 export { createVNode as createElementVNode }
         _a[CREATE_ELEMENT_VNODE] = 'createElementVNode',
         _a[CREATE_VNODE] = 'createVNode',
@@ -872,11 +875,17 @@ var Vue = (function (exports) {
      * 区分节点进行处理
      */
     function genNode(node, context) {
+        if (isSymbol(node)) {
+            context.push(context.helper(node));
+            return;
+        }
         switch (node.type) {
             case 1 /* NodeTypes.ELEMENT */:
             case 9 /* NodeTypes.IF */:
                 genNode(node.codegenNode, context);
                 break;
+            case 11 /* NodeTypes.FOR */:
+                genNode(node.codegenNode, context);
             case 13 /* NodeTypes.VNODE_CALL */:
                 genVNodeCall(node, context);
                 break;
@@ -1693,21 +1702,24 @@ var Vue = (function (exports) {
         }
     };
 
+    var forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/;
     var transformFor = createStructuralDirectiveTransform('for', function (node, dir, context) {
         return processFor(node, dir, context, function (forNode) {
             var renderExp = createCallExpression(context.helper(RENDER_LIST), [
                 forNode.source
             ]);
             return function () {
-                forNode.codegenNode = createVNodeCall(context, 'Fragment', undefined, renderExp);
+                forNode.codegenNode = createVNodeCall(context, Fragment, undefined, renderExp);
             };
         });
     });
     function processFor(node, dir, context, processCodegen) {
         if (dir.name === 'for') {
+            var parseResult = parseForExpression(dir.exp);
             var forNode = {
                 type: 11 /* NodeTypes.FOR */,
-                loc: node.loc
+                loc: node.loc,
+                source: parseResult === null || parseResult === void 0 ? void 0 : parseResult.source
                 //   branches: [branch]
             };
             context.replaceNode(forNode);
@@ -1717,23 +1729,24 @@ var Vue = (function (exports) {
             }
         }
     }
-    // export const transformIf = createStructuralDirectiveTransform(
-    //     /^(if|else|else-if)$/,
-    //     (node, dir, context) => {
-    //       return processIf(node, dir, context, (ifNode, branch, isRoot) => {
-    //         // TODO: 目前无需处理兄弟节点情况
-    //         let key = 0
-    //         // 退出回调。当所有子节点都已完成时，完成codegenNode
-    //         return () => {
-    //           if (isRoot) {
-    //             ifNode.codegenNode = createCodegenNodeForBranch(branch, key, context)
-    //           } else {
-    //             // TODO: 非根
-    //           }
-    //         }
-    //       })
-    //     }
-    //   )
+    function parseForExpression(input, context) {
+        var loc = input.loc;
+        var exp = input.content;
+        var inMatch = exp.match(forAliasRE);
+        if (!inMatch)
+            return;
+        var _a = __read(inMatch, 3), LHS = _a[1], RHS = _a[2];
+        var result = {
+            source: createAliasExpression(loc, RHS.trim(), exp.indexOf(RHS, LHS.length)),
+            value: undefined,
+            key: undefined,
+            index: undefined
+        };
+        return result;
+    }
+    function createAliasExpression(range, content, offset) {
+        return createSimpleExpression(content, false);
+    }
 
     /**
      * transformIf === exitFns。内部保存了所有 v-if、v-else、else-if 的处理函数
@@ -2745,6 +2758,7 @@ var Vue = (function (exports) {
     exports.isObject = isObject;
     exports.isOn = isOn;
     exports.isString = isString;
+    exports.isSymbol = isSymbol;
     exports.reactive = reactive;
     exports.ref = ref;
     exports.render = render;

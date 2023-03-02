@@ -1,10 +1,17 @@
-import { createCallExpression, createVNodeCall, NodeTypes } from '../ast'
+import { Fragment } from '@vue/runtime-core'
+import {
+  createCallExpression,
+  createSimpleExpression,
+  createVNodeCall,
+  NodeTypes
+} from '../ast'
 import { RENDER_LIST } from '../runtimeHelpers'
 import {
   createStructuralDirectiveTransform,
   TransformContext
 } from '../transform'
 
+const forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/
 export const transformFor = createStructuralDirectiveTransform(
   'for',
   (node, dir, context) => {
@@ -15,7 +22,7 @@ export const transformFor = createStructuralDirectiveTransform(
       return () => {
         forNode.codegenNode = createVNodeCall(
           context,
-          'Fragment',
+          Fragment,
           undefined,
           renderExp
         )
@@ -31,9 +38,11 @@ export function processFor(
   processCodegen?: (node) => (() => void) | undefined
 ) {
   if (dir.name === 'for') {
+    const parseResult = parseForExpression(dir.exp, context)
     const forNode = {
       type: NodeTypes.FOR,
-      loc: node.loc
+      loc: node.loc,
+      source: parseResult?.source
       //   branches: [branch]
     }
     context.replaceNode(forNode)
@@ -44,21 +53,27 @@ export function processFor(
   }
 }
 
-// export const transformIf = createStructuralDirectiveTransform(
-//     /^(if|else|else-if)$/,
-//     (node, dir, context) => {
-//       return processIf(node, dir, context, (ifNode, branch, isRoot) => {
-//         // TODO: 目前无需处理兄弟节点情况
-//         let key = 0
+export function parseForExpression(input, context) {
+  const loc = input.loc
+  const exp = input.content
+  const inMatch = exp.match(forAliasRE)
+  if (!inMatch) return
 
-//         // 退出回调。当所有子节点都已完成时，完成codegenNode
-//         return () => {
-//           if (isRoot) {
-//             ifNode.codegenNode = createCodegenNodeForBranch(branch, key, context)
-//           } else {
-//             // TODO: 非根
-//           }
-//         }
-//       })
-//     }
-//   )
+  const [, LHS, RHS] = inMatch
+
+  const result = {
+    source: createAliasExpression(
+      loc,
+      RHS.trim(),
+      exp.indexOf(RHS, LHS.length)
+    ),
+    value: undefined,
+    key: undefined,
+    index: undefined
+  }
+  return result
+}
+
+function createAliasExpression(range, content: string, offset: number) {
+  return createSimpleExpression(content, false)
+}

@@ -1,4 +1,4 @@
-import { isArray, isString } from '@vue/shared'
+import { isArray, isString, isSymbol } from '@vue/shared'
 import { NodeTypes } from './ast'
 import { helperNameMap, TO_DISPLAY_STRING } from './runtimeHelpers'
 import { getVNodeHelper } from './utils'
@@ -118,11 +118,17 @@ function genFunctionPreamble(context) {
  * 区分节点进行处理
  */
 function genNode(node, context) {
+  if (isSymbol(node)) {
+    context.push(context.helper(node))
+    return
+  }
   switch (node.type) {
     case NodeTypes.ELEMENT:
     case NodeTypes.IF:
       genNode(node.codegenNode!, context)
       break
+    case NodeTypes.FOR:
+      genNode(node.codegenNode!, context)
     case NodeTypes.VNODE_CALL:
       genVNodeCall(node, context)
       break
