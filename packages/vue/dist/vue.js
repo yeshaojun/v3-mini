@@ -820,6 +820,7 @@ var Vue = (function (exports) {
         return context;
     }
     function generate(ast) {
+        console.log('ast', ast);
         // 生成上下文
         var context = createCodegenContext(ast);
         // 获取code拼接方法
@@ -889,6 +890,7 @@ var Vue = (function (exports) {
                 break;
             case 11 /* NodeTypes.FOR */:
                 genNode(node.codegenNode, context);
+                break;
             case 13 /* NodeTypes.VNODE_CALL */:
                 genVNodeCall(node, context);
                 break;
@@ -910,6 +912,9 @@ var Vue = (function (exports) {
             // JS调用表达式的处理
             case 14 /* NodeTypes.JS_CALL_EXPRESSION */:
                 genCallExpression(node, context);
+                break;
+            case 18 /* NodeTypes.JS_FUNCTION_EXPRESSION */:
+                genFunctionExpression(node, context);
                 break;
             // JS条件表达式的处理
             case 19 /* NodeTypes.JS_CONDITIONAL_EXPRESSION */:
@@ -1057,6 +1062,32 @@ var Vue = (function (exports) {
     function genExpression(node, context) {
         var content = node.content, isStatic = node.isStatic;
         context.push(isStatic ? JSON.stringify(content) : content, node);
+    }
+    function genFunctionExpression(node, context) {
+        var push = context.push, indent = context.indent, deindent = context.deindent;
+        var params = node.params, returns = node.returns, body = node.body, newline = node.newline; node.isSlot;
+        push("(", node);
+        if (isArray(params)) {
+            genNodeList(params, context);
+        }
+        else {
+            genNode(params, context);
+        }
+        push(") => ");
+        if (newline || body) {
+            push("{");
+            indent();
+        }
+        if (returns) {
+            if (newline) {
+                push("return ");
+            }
+            genNode(returns, context);
+        }
+        if (newline || body) {
+            deindent();
+            push("}");
+        }
     }
 
     /**
@@ -1727,7 +1758,7 @@ var Vue = (function (exports) {
             var renderExp = createCallExpression(context.helper(RENDER_LIST), [
                 forNode.source
             ]);
-            forNode.codegenNode = createVNodeCall(context, FRAGMENT, undefined, renderExp);
+            forNode.codegenNode = createVNodeCall(context, context.helper(FRAGMENT), undefined, renderExp);
             return function () {
                 var childBlock = null;
                 var children = forNode.children;
@@ -1889,8 +1920,7 @@ var Vue = (function (exports) {
 
     function compileToFunction(template, options) {
         var code = compile(template, options).code;
-        var code1 = "\n    const _Vue = Vue\n\n    return function render(_ctx, _cache) {\n      with (_ctx) {\n        const { createElementVNode: _createElementVNode } = _Vue\n\n        return _createElementVNode(\"div\", [], [\" hello world \"])\n      }\n  }";
-        console.log('code1', code1 === code);
+        console.log('code1', code);
         var render = new Function(code)();
         return render;
     }
@@ -2546,6 +2576,17 @@ var Vue = (function (exports) {
         return result;
     }
 
+    function renderList(source, renderItem) {
+        var ret;
+        if (isArray(source) || isString(source)) {
+            ret = new Array(source.length);
+            for (var i = 0, l = source.length; i < l; i++) {
+                ret[i] = renderItem(source[i], i);
+            }
+            return ret;
+        }
+    }
+
     var doc = document;
     var nodeOps = {
         /**
@@ -2808,6 +2849,7 @@ var Vue = (function (exports) {
     exports.reactive = reactive;
     exports.ref = ref;
     exports.render = render;
+    exports.renderList = renderList;
     exports.toDisplayString = toDisplayString;
     exports.watch = watch;
     exports.watchEffect = watchEffect;

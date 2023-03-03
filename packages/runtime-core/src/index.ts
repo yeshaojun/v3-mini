@@ -8,3 +8,5 @@ export {
   createElementVNode,
   createCommentVNode
 } from './vnode'
+
+export { renderList } from './helpers/renderList'

@@ -51,6 +51,7 @@ function createCodegenContext(ast) {
 }
 
 export function generate(ast) {
+  console.log('ast', ast)
   // 生成上下文
   const context = createCodegenContext(ast)
   // 获取code拼接方法
@@ -129,6 +130,7 @@ function genNode(node, context) {
       break
     case NodeTypes.FOR:
       genNode(node.codegenNode!, context)
+      break
     case NodeTypes.VNODE_CALL:
       genVNodeCall(node, context)
       break
@@ -150,6 +152,9 @@ function genNode(node, context) {
     // JS调用表达式的处理
     case NodeTypes.JS_CALL_EXPRESSION:
       genCallExpression(node, context)
+      break
+    case NodeTypes.JS_FUNCTION_EXPRESSION:
+      genFunctionExpression(node, context)
       break
     // JS条件表达式的处理
     case NodeTypes.JS_CONDITIONAL_EXPRESSION:
@@ -310,4 +315,30 @@ function genInterpolation(node, context) {
 function genExpression(node, context) {
   const { content, isStatic } = node
   context.push(isStatic ? JSON.stringify(content) : content, node)
+}
+
+function genFunctionExpression(node, context) {
+  const { push, indent, deindent } = context
+  const { params, returns, body, newline, isSlot } = node
+  push(`(`, node)
+  if (isArray(params)) {
+    genNodeList(params, context)
+  } else {
+    genNode(params, context)
+  }
+  push(`) => `)
+  if (newline || body) {
+    push(`{`)
+    indent()
+  }
+  if (returns) {
+    if (newline) {
+      push(`return `)
+    }
+    genNode(returns, context)
+  }
+  if (newline || body) {
+    deindent()
+    push(`}`)
+  }
 }

@@ -24,7 +24,7 @@ export const transformFor = createStructuralDirectiveTransform(
       ])
       forNode.codegenNode = createVNodeCall(
         context,
-        FRAGMENT,
+        context.helper(FRAGMENT),
         undefined,
         renderExp
       )
