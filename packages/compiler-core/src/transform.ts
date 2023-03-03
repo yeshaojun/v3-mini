@@ -94,6 +94,7 @@ export function traverseNode(node, context: TransformContext) {
   switch (node.type) {
     case NodeTypes.IF_BRANCH:
     case NodeTypes.ELEMENT:
+    case NodeTypes.FOR:
     case NodeTypes.ROOT:
       traverseChildren(node, context)
       break

@@ -1472,6 +1472,7 @@ var Vue = (function (exports) {
         switch (node.type) {
             case 10 /* NodeTypes.IF_BRANCH */:
             case 1 /* NodeTypes.ELEMENT */:
+            case 11 /* NodeTypes.FOR */:
             case 0 /* NodeTypes.ROOT */:
                 traverseChildren(node, context);
                 break;
@@ -1648,6 +1649,20 @@ var Vue = (function (exports) {
             value: value
         };
     }
+    function createFunctionExpression(params, returns, newline, isSlot, loc) {
+        if (returns === void 0) { returns = undefined; }
+        if (newline === void 0) { newline = false; }
+        if (isSlot === void 0) { isSlot = false; }
+        if (loc === void 0) { loc = ''; }
+        return {
+            type: 18 /* NodeTypes.JS_FUNCTION_EXPRESSION */,
+            params: params,
+            returns: returns,
+            newline: newline,
+            isSlot: isSlot,
+            loc: loc
+        };
+    }
 
     var transformElement = function (node, context) {
         return function postTransformElement() {
@@ -1706,6 +1721,7 @@ var Vue = (function (exports) {
     };
 
     var forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/;
+    var stripParensRE = /^\(|\)$/g;
     var transformFor = createStructuralDirectiveTransform('for', function (node, dir, context) {
         return processFor(node, dir, context, function (forNode) {
             var renderExp = createCallExpression(context.helper(RENDER_LIST), [
@@ -1713,8 +1729,12 @@ var Vue = (function (exports) {
             ]);
             forNode.codegenNode = createVNodeCall(context, FRAGMENT, undefined, renderExp);
             return function () {
-                forNode.children;
-                debugger;
+                var childBlock = null;
+                var children = forNode.children;
+                childBlock = children[0].codegenNode;
+                childBlock.isBlock = true;
+                if (childBlock.isBlock) ;
+                renderExp.arguments.push(createFunctionExpression(createForLoopParams(forNode.parseResult), childBlock, true /* force newline */));
             };
         });
     });
@@ -1725,14 +1745,16 @@ var Vue = (function (exports) {
                 type: 11 /* NodeTypes.FOR */,
                 loc: node.loc,
                 source: parseResult === null || parseResult === void 0 ? void 0 : parseResult.source,
-                children: isTemplateNode(node) ? node.children : [node]
+                children: isTemplateNode(node) ? node.children : [node],
+                parseResult: parseResult
                 //   branches: [branch]
             };
             context.replaceNode(forNode);
             // 生成对应的 codegen 属性
-            if (processCodegen) {
-                return processCodegen(forNode);
-            }
+            var onExit_1 = processCodegen && processCodegen(forNode);
+            return function () {
+                onExit_1 && onExit_1();
+            };
         }
     }
     function parseForExpression(input, context) {
@@ -1742,16 +1764,34 @@ var Vue = (function (exports) {
         if (!inMatch)
             return;
         var _a = __read(inMatch, 3), LHS = _a[1], RHS = _a[2];
+        var valueContent = LHS.trim().replace(stripParensRE, '').trim();
+        LHS.indexOf(valueContent);
         var result = {
             source: createAliasExpression(loc, RHS.trim(), exp.indexOf(RHS, LHS.length)),
             value: undefined,
             key: undefined,
             index: undefined
         };
+        result.value = createAliasExpression(loc, valueContent);
         return result;
     }
     function createAliasExpression(range, content, offset) {
         return createSimpleExpression(content, false);
+    }
+    function createForLoopParams(_a, memoArgs) {
+        var value = _a.value, key = _a.key, index = _a.index;
+        if (memoArgs === void 0) { memoArgs = []; }
+        return createParamsList(__spreadArray([value, key, index], __read(memoArgs), false));
+    }
+    function createParamsList(args) {
+        var i = args.length;
+        while (i--) {
+            if (args[i])
+                break;
+        }
+        return args
+            .slice(0, i + 1)
+            .map(function (arg, i) { return arg || createSimpleExpression("_".repeat(i + 1), false); });
     }
 
     /**

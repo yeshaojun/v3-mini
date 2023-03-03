@@ -138,3 +138,20 @@ export function createObjectProperty(key, value) {
     value
   }
 }
+
+export function createFunctionExpression(
+  params,
+  returns = undefined,
+  newline: boolean = false,
+  isSlot: boolean = false,
+  loc = ''
+) {
+  return {
+    type: NodeTypes.JS_FUNCTION_EXPRESSION,
+    params,
+    returns,
+    newline,
+    isSlot,
+    loc
+  }
+}
