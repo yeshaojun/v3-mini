@@ -2,6 +2,7 @@ import { reactive } from '@vue/reactivity'
 import { isFunction, isObject } from '@vue/shared'
 import { compile } from '@vue/vue-compat'
 import { onBeforeMount, onMounted } from './apiLifecycle'
+import { PublicInstanceProxyHandlers } from './componentPublicInstance'
 
 /**
  * 生命周期钩子
@@ -30,6 +31,7 @@ function setupStatefulComponent(instance) {
   const { setup } = Component
   // 存在 setup ，则直接获取 setup 函数的返回值即可
   if (setup) {
+    // instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers)
     const setupResult = setup()
     handleSetupResult(instance, setupResult)
   } else {
@@ -69,6 +71,7 @@ export function handleSetupResult(instance, setupResult) {
   if (isFunction(setupResult)) {
     instance.render = setupResult
   } else if (isObject(setupResult)) {
+    instance.data = setupResult
   }
   finishComponentSetup(instance)
 }
@@ -111,7 +114,7 @@ function applyOptions(instance: any) {
   // 存在 data 选项时
   if (dataOptions) {
     // 触发 dataOptions 函数，拿到 data 对象
-    const data = dataOptions()
+    const data = dataOptions.call(instance)
     // 如果拿到的 data 是一个对象
     if (isObject(data)) {
       // 则把 data 包装成 reactiv 的响应性数据，赋值给 instance

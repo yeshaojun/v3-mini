@@ -175,4 +175,4 @@ function tokenizer(input) {
 
 let template = '<div>hello word</div>'
 
-console.log(tokenizer(template))
+// console.log(tokenizer(template))

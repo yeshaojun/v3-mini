@@ -11,23 +11,29 @@
   <body>
     <div id="app">
       <ul>
-        <li v-for="item in list" :key="item"></li>
+        <li v-for="item in list" :key="item">{{item}}</li>
       </ul>
     </div>
   </body>
   <script>
-    const { createApp } = Vue
+    const { createApp, reactive } = Vue
     const APP = {
       // template: `<div><ul><li v-for="item in list" :key="item">{{item}}</li></ul></div>`,
       data() {
         return {
-          list: [1, 2, 3, 4, 5]
+          list: [1, 2, 3, 4]
         }
       },
+      // setup() {
+      //   const list = reactive([1, 2, 3, 4])
+      //   return {
+      //     list
+      //   }
+      // },
       mounted() {
-        // console.log('231', this.list)
         setTimeout(() => {
-          this.list = [1]
+          console.log('this', this)
+          this.list.push(5)
         }, 2000)
       }
     }

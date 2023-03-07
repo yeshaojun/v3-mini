@@ -1,6 +1,52 @@
 var Vue = (function (exports) {
     'use strict';
 
+    /**
+     * 用于将 {{ Interpolation }} 值转换为显示的字符串。
+     * @private
+     */
+    var toDisplayString = function (val) {
+        return String(val);
+    };
+
+    /**
+     * 判断是否为一个数组
+     */
+    var isArray = Array.isArray;
+    var isObject = function (val) {
+        return val !== null && typeof val === 'object';
+    };
+    /**
+     * 对比两个数据是否发生了改变
+     */
+    var hasChanged = function (value, oldValue) {
+        return !Object.is(value, oldValue);
+    };
+    /**
+     * 合并对象
+     */
+    var extend = Object.assign;
+    /**
+     * 是否为函数
+     */
+    var isFunction = function (val) {
+        return typeof val === 'function';
+    };
+    /**
+     * 只读的空对象
+     */
+    var EMPTY_OBJ = {};
+    /**
+     * 判断是否为一个 string
+     */
+    var isString = function (val) { return typeof val === 'string'; };
+    var onRE = /^on[^a-z]/;
+    /**
+     * 是否 on 开头
+     */
+    var isOn = function (key) { return onRE.test(key); };
+    var isSymbol = function (val) { return typeof val === 'symbol'; };
+
     /******************************************************************************
     Copyright (c) Microsoft Corporation.
 
@@ -54,52 +100,6 @@ var Vue = (function (exports) {
         }
         return to.concat(ar || Array.prototype.slice.call(from));
     }
-
-    /**
-     * 用于将 {{ Interpolation }} 值转换为显示的字符串。
-     * @private
-     */
-    var toDisplayString = function (val) {
-        return String(val);
-    };
-
-    /**
-     * 判断是否为一个数组
-     */
-    var isArray = Array.isArray;
-    var isObject = function (val) {
-        return val !== null && typeof val === 'object';
-    };
-    /**
-     * 对比两个数据是否发生了改变
-     */
-    var hasChanged = function (value, oldValue) {
-        return !Object.is(value, oldValue);
-    };
-    /**
-     * 合并对象
-     */
-    var extend = Object.assign;
-    /**
-     * 是否为函数
-     */
-    var isFunction = function (val) {
-        return typeof val === 'function';
-    };
-    /**
-     * 只读的空对象
-     */
-    var EMPTY_OBJ = {};
-    /**
-     * 判断是否为一个 string
-     */
-    var isString = function (val) { return typeof val === 'string'; };
-    var onRE = /^on[^a-z]/;
-    /**
-     * 是否 on 开头
-     */
-    var isOn = function (key) { return onRE.test(key); };
-    var isSymbol = function (val) { return typeof val === 'symbol'; };
 
     var createDep = function (effects) {
         var dep = new Set(effects);
@@ -244,6 +244,9 @@ var Vue = (function (exports) {
         return function get(target, key, receiver) {
             var res = Reflect.get(target, key, receiver);
             track(target, key);
+            if (isObject(res)) {
+                return reactive(res);
+            }
             return res;
         };
     }
@@ -1958,6 +1961,7 @@ var Vue = (function (exports) {
         var setup = Component.setup;
         // 存在 setup ，则直接获取 setup 函数的返回值即可
         if (setup) {
+            // instance.proxy = new Proxy(instance.ctx, PublicInstanceProxyHandlers)
             var setupResult = setup();
             handleSetupResult(instance, setupResult);
         }
@@ -1994,6 +1998,9 @@ var Vue = (function (exports) {
         if (isFunction(setupResult)) {
             instance.render = setupResult;
         }
+        else if (isObject(setupResult)) {
+            instance.data = setupResult;
+        }
         finishComponentSetup(instance);
     }
     function finishComponentSetup(instance) {
@@ -2024,7 +2031,7 @@ var Vue = (function (exports) {
         // 存在 data 选项时
         if (dataOptions) {
             // 触发 dataOptions 函数，拿到 data 对象
-            var data = dataOptions();
+            var data = dataOptions.call(instance);
             // 如果拿到的 data 是一个对象
             if (isObject(data)) {
                 // 则把 data 包装成 reactiv 的响应性数据，赋值给 instance

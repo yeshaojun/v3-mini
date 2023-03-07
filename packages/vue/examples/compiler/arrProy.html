@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="../../dist/vue.js"></script>
+  </head>
+  <body>
+    <script>
+      const { reactive } = Vue
+      const list = reactive({
+        list: [1, 2, 3, 4]
+      })
+      //   const list = new Proxy([1, 2, 3, 4], {
+      //     set: (target, key, value, receiver) => {
+      //       console.log('set', target, key, value)
+      //       debugger
+      //       const result = Reflect.set(target, key, value, receiver)
+      //       //   if (key === 'lenght') {
+      //       //     return target.length
+      //       //   }
+      //       //   let isArray = target instanceof Array
+      //       //   let hadKey = isArray
+      //       //     ? Number(key) < target.length
+      //       //     : Object.prototype.hasOwnProperty.call(target, value)
+      //       //   if (isArray) {
+      //       //     if (!hadKey) {
+      //       //       target.push(value)
+      //       //     } else {
+
+      //       //     }
+      //       //   } else {
+      //       //     target[key] = value
+      //       //   }
+      //     },
+      //     get: (target, key) => {
+      //       return target[key]
+      //     }
+      //   })
+      //   //   list.splice(1, 1)
+      setTimeout(() => {
+        list.list.push(5)
+      }, 2000)
+    </script>
+  </body>
+</html>
