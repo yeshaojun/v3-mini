@@ -9,10 +9,15 @@ export const transformElement = (node, context) => {
       return
     }
 
-    const { tag } = node
+    const { tag, props } = node
 
     let vnodeTag = `"${tag}"`
     let vnodeProps = []
+    if (props.length > 0) {
+      const propsBuildResult = buildProps(node, context, null)
+      vnodeProps = propsBuildResult.props as any
+    }
+
     let vnodeChildren = node.children
 
     node.codegenNode = createVNodeCall(
@@ -21,5 +26,25 @@ export const transformElement = (node, context) => {
       vnodeProps,
       vnodeChildren
     )
+  }
+}
+
+export function buildProps(node, context, props = node.props) {
+  for (let i = 0; i < props.length; i++) {
+    const prop = props[i]
+    if (prop.type === NodeTypes.ATTRIBUTE) {
+    } else {
+      const { name, exp } = prop
+      const isVBind = name === 'bind'
+      const isVOn = name === 'on'
+      const directiveTransform = context.directiveTransforms[name]
+      if (directiveTransform) {
+        const { props } = directiveTransform(prop, node, context)
+      }
+    }
+  }
+  let propsExpression = undefined
+  return {
+    props: propsExpression
   }
 }

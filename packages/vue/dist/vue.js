@@ -1705,13 +1705,35 @@ var Vue = (function (exports) {
             if (node.type !== 1 /* NodeTypes.ELEMENT */) {
                 return;
             }
-            var tag = node.tag;
+            var tag = node.tag, props = node.props;
             var vnodeTag = "\"".concat(tag, "\"");
             var vnodeProps = [];
+            if (props.length > 0) {
+                var propsBuildResult = buildProps(node, context, null);
+                vnodeProps = propsBuildResult.props;
+            }
             var vnodeChildren = node.children;
             node.codegenNode = createVNodeCall(context, vnodeTag, vnodeProps, vnodeChildren);
         };
     };
+    function buildProps(node, context, props) {
+        if (props === void 0) { props = node.props; }
+        for (var i = 0; i < props.length; i++) {
+            var prop = props[i];
+            if (prop.type === 6 /* NodeTypes.ATTRIBUTE */) ;
+            else {
+                var name_1 = prop.name; prop.exp;
+                var directiveTransform = context.directiveTransforms[name_1];
+                if (directiveTransform) {
+                    directiveTransform(prop, node, context).props;
+                }
+            }
+        }
+        var propsExpression = undefined;
+        return {
+            props: propsExpression
+        };
+    }
 
     var transformText = function (node, context) {
         if (node.type === 0 /* NodeTypes.ROOT */ ||
@@ -1912,6 +1934,7 @@ var Vue = (function (exports) {
                 transformText,
                 transformIf,
                 transformFor
+                // transformBind
             ]
         }));
         return generate(ast);

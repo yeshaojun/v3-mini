@@ -4,6 +4,7 @@ import { baseParse } from './parse'
 import { transform } from './transform'
 import { transformElement } from './transforms/transformElement'
 import { transformText } from './transforms/transformText'
+import { transformBind } from './transforms/vBind'
 import { transformFor } from './transforms/vFor'
 import { transformIf } from './transforms/vIf'
 
@@ -18,7 +19,11 @@ export function baseCompile(template: string, options = {}) {
         transformText,
         transformIf,
         transformFor
-      ]
+        //
+      ],
+      directiveTransforms: {
+        transformBind
+      }
     })
   )
   return generate(ast)

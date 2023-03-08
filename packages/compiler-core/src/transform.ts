@@ -33,6 +33,8 @@ export interface TransformContext {
    * 转化方法集合
    */
   nodeTransforms: any[]
+  // 指令转化方法
+  directiveTransforms: Object
   /**
    * 替换节点
    */
@@ -131,10 +133,11 @@ export function traverseChildren(parent, context: TransformContext) {
 
 export function createTransformContext(
   root,
-  { nodeTransforms = [] }
+  { nodeTransforms = [], directiveTransforms = {} }
 ): TransformContext {
   const context: TransformContext = {
     nodeTransforms, // 转化element, text的方法
+    directiveTransforms,
     root,
     helpers: new Map(),
     currentNode: root,
