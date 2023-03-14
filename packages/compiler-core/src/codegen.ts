@@ -1,7 +1,7 @@
 import { isArray, isString, isSymbol } from '@vue/shared'
 import { NodeTypes } from './ast'
 import { helperNameMap, TO_DISPLAY_STRING } from './runtimeHelpers'
-import { getVNodeHelper } from './utils'
+import { getVNodeHelper, isSimpleIdentifier } from './utils'
 
 const aliasHelper = (s: symbol) => `${helperNameMap[s]}: _${helperNameMap[s]}`
 
@@ -152,6 +152,9 @@ function genNode(node, context) {
     // JS调用表达式的处理
     case NodeTypes.JS_CALL_EXPRESSION:
       genCallExpression(node, context)
+      break
+    case NodeTypes.JS_OBJECT_EXPRESSION:
+      genObjectExpression(node, context)
       break
     case NodeTypes.JS_FUNCTION_EXPRESSION:
       genFunctionExpression(node, context)
@@ -340,5 +343,49 @@ function genFunctionExpression(node, context) {
   if (newline || body) {
     deindent()
     push(`}`)
+  }
+}
+
+function genObjectExpression(node, context) {
+  const { push, indent, deindent, newline } = context
+  const { properties } = node
+  if (!properties.length) {
+    push('{}', node)
+    return
+  }
+  const multilines =
+    properties.length > 1 ||
+    properties.some(p => p.value.type !== NodeTypes.SIMPLE_EXPRESSION)
+  push(multilines ? `{` : `{ `)
+  multilines && indent()
+  for (let i = 0; i < properties.length; i++) {
+    const { key, value } = properties[i]
+    // key
+    genExpressionAsPropertyKey(key, context)
+    push(`: `)
+    // value
+    genNode(value, context)
+    if (i < properties.length - 1) {
+      // will only reach this if it's multilines
+      push(`,`)
+      newline()
+    }
+  }
+  multilines && deindent()
+  push(multilines ? `}` : ` }`)
+}
+
+function genExpressionAsPropertyKey(node, context) {
+  const { push } = context
+  if (node.type === NodeTypes.COMPOUND_EXPRESSION) {
+    push(`[`)
+    genCompoundExpression(node, context)
+    push(`]`)
+  } else {
+    // only quote keys if necessary
+    const text = isSimpleIdentifier(node.content)
+      ? node.content
+      : JSON.stringify(node.content)
+    push(text, node)
   }
 }

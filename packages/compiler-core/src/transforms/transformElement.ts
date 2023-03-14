@@ -1,4 +1,5 @@
 import { createVNodeCall, NodeTypes } from '../ast'
+import { createObjectExpression } from '../utils'
 
 export const transformElement = (node, context) => {
   return function postTransformElement() {
@@ -14,7 +15,7 @@ export const transformElement = (node, context) => {
     let vnodeTag = `"${tag}"`
     let vnodeProps = []
     if (props.length > 0) {
-      const propsBuildResult = buildProps(node, context, null)
+      const propsBuildResult = buildProps(node, context)
       vnodeProps = propsBuildResult.props as any
     }
 
@@ -30,6 +31,7 @@ export const transformElement = (node, context) => {
 }
 
 export function buildProps(node, context, props = node.props) {
+  let properties: any = []
   for (let i = 0; i < props.length; i++) {
     const prop = props[i]
     if (prop.type === NodeTypes.ATTRIBUTE) {
@@ -38,13 +40,33 @@ export function buildProps(node, context, props = node.props) {
       const isVBind = name === 'bind'
       const isVOn = name === 'on'
       const directiveTransform = context.directiveTransforms[name]
+      console.log('node', directiveTransform)
       if (directiveTransform) {
         const { props } = directiveTransform(prop, node, context)
+        properties.push(...props)
       }
     }
   }
-  let propsExpression = undefined
+  let propsExpression: any = undefined
+
+  propsExpression = createObjectExpression(dedupeProperties(properties))
   return {
     props: propsExpression
   }
+}
+
+function dedupeProperties(properties: []) {
+  const knownProps = new Map()
+  const deduped: any = []
+  for (let i = 0; i < properties.length; i++) {
+    const prop: any = properties[i]
+    const name = prop.key.content
+    const existing = knownProps.get(name)
+    if (existing) {
+    } else {
+      knownProps.set(name, prop)
+      deduped.push(prop)
+    }
+  }
+  return deduped
 }

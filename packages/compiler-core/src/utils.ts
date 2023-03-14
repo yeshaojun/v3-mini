@@ -54,3 +54,7 @@ export function isTemplateNode(node) {
     node.type === NodeTypes.ELEMENT && node.tagType === ElementTypes.TEMPLATE
   )
 }
+
+const nonIdentifierRE = /^\d|[^\$\w]/
+export const isSimpleIdentifier = (name: string): boolean =>
+  !nonIdentifierRE.test(name)

@@ -9,6 +9,13 @@ var Vue = (function (exports) {
         return String(val);
     };
 
+    var cacheStringFunction = function (fn) {
+        var cache = Object.create(null);
+        return (function (str) {
+            var hit = cache[str];
+            return hit || (cache[str] = fn(str));
+        });
+    };
     /**
      * 判断是否为一个数组
      */
@@ -46,6 +53,23 @@ var Vue = (function (exports) {
      */
     var isOn = function (key) { return onRE.test(key); };
     var isSymbol = function (val) { return typeof val === 'symbol'; };
+    /**
+     * @private
+     */
+    var capitalize = cacheStringFunction(function (str) { return str.charAt(0).toUpperCase() + str.slice(1); });
+    /**
+     * @private
+     */
+    var toHandlerKey = cacheStringFunction(function (str) {
+        return str ? "on".concat(capitalize(str)) : "";
+    });
+    var camelizeRE = /-(\w)/g;
+    /**
+     * @private
+     */
+    var camelize = cacheStringFunction(function (str) {
+        return str.replace(camelizeRE, function (_, c) { return (c ? c.toUpperCase() : ''); });
+    });
 
     /******************************************************************************
     Copyright (c) Microsoft Corporation.
@@ -776,6 +800,10 @@ var Vue = (function (exports) {
     function isTemplateNode(node) {
         return (node.type === 1 /* NodeTypes.ELEMENT */ && node.tagType === 3 /* ElementTypes.TEMPLATE */);
     }
+    var nonIdentifierRE = /^\d|[^\$\w]/;
+    var isSimpleIdentifier = function (name) {
+        return !nonIdentifierRE.test(name);
+    };
 
     var aliasHelper = function (s) { return "".concat(helperNameMap[s], ": _").concat(helperNameMap[s]); };
     function createCodegenContext(ast) {
@@ -915,6 +943,9 @@ var Vue = (function (exports) {
             // JS调用表达式的处理
             case 14 /* NodeTypes.JS_CALL_EXPRESSION */:
                 genCallExpression(node, context);
+                break;
+            case 15 /* NodeTypes.JS_OBJECT_EXPRESSION */:
+                genObjectExpression(node, context);
                 break;
             case 18 /* NodeTypes.JS_FUNCTION_EXPRESSION */:
                 genFunctionExpression(node, context);
@@ -1090,6 +1121,48 @@ var Vue = (function (exports) {
         if (newline || body) {
             deindent();
             push("}");
+        }
+    }
+    function genObjectExpression(node, context) {
+        var push = context.push, indent = context.indent, deindent = context.deindent, newline = context.newline;
+        var properties = node.properties;
+        if (!properties.length) {
+            push('{}', node);
+            return;
+        }
+        var multilines = properties.length > 1 ||
+            properties.some(function (p) { return p.value.type !== 4 /* NodeTypes.SIMPLE_EXPRESSION */; });
+        push(multilines ? "{" : "{ ");
+        multilines && indent();
+        for (var i = 0; i < properties.length; i++) {
+            var _a = properties[i], key = _a.key, value = _a.value;
+            // key
+            genExpressionAsPropertyKey(key, context);
+            push(": ");
+            // value
+            genNode(value, context);
+            if (i < properties.length - 1) {
+                // will only reach this if it's multilines
+                push(",");
+                newline();
+            }
+        }
+        multilines && deindent();
+        push(multilines ? "}" : " }");
+    }
+    function genExpressionAsPropertyKey(node, context) {
+        var push = context.push;
+        if (node.type === 8 /* NodeTypes.COMPOUND_EXPRESSION */) {
+            push("[");
+            genCompoundExpression(node, context);
+            push("]");
+        }
+        else {
+            // only quote keys if necessary
+            var text = isSimpleIdentifier(node.content)
+                ? node.content
+                : JSON.stringify(node.content);
+            push(text, node);
         }
     }
 
@@ -1539,9 +1612,10 @@ var Vue = (function (exports) {
         });
     }
     function createTransformContext(root, _a) {
-        var _b = _a.nodeTransforms, nodeTransforms = _b === void 0 ? [] : _b;
+        var _b = _a.nodeTransforms, nodeTransforms = _b === void 0 ? [] : _b, _c = _a.directiveTransforms, directiveTransforms = _c === void 0 ? {} : _c;
         var context = {
             nodeTransforms: nodeTransforms,
+            directiveTransforms: directiveTransforms,
             root: root,
             helpers: new Map(),
             currentNode: root,
@@ -1709,7 +1783,7 @@ var Vue = (function (exports) {
             var vnodeTag = "\"".concat(tag, "\"");
             var vnodeProps = [];
             if (props.length > 0) {
-                var propsBuildResult = buildProps(node, context, null);
+                var propsBuildResult = buildProps(node, context);
                 vnodeProps = propsBuildResult.props;
             }
             var vnodeChildren = node.children;
@@ -1718,21 +1792,40 @@ var Vue = (function (exports) {
     };
     function buildProps(node, context, props) {
         if (props === void 0) { props = node.props; }
+        var properties = [];
         for (var i = 0; i < props.length; i++) {
             var prop = props[i];
             if (prop.type === 6 /* NodeTypes.ATTRIBUTE */) ;
             else {
                 var name_1 = prop.name; prop.exp;
                 var directiveTransform = context.directiveTransforms[name_1];
+                console.log('node', directiveTransform);
                 if (directiveTransform) {
-                    directiveTransform(prop, node, context).props;
+                    var props_1 = directiveTransform(prop, node, context).props;
+                    properties.push.apply(properties, __spreadArray([], __read(props_1), false));
                 }
             }
         }
         var propsExpression = undefined;
+        propsExpression = createObjectExpression(dedupeProperties(properties));
         return {
             props: propsExpression
         };
+    }
+    function dedupeProperties(properties) {
+        var knownProps = new Map();
+        var deduped = [];
+        for (var i = 0; i < properties.length; i++) {
+            var prop = properties[i];
+            var name_2 = prop.key.content;
+            var existing = knownProps.get(name_2);
+            if (existing) ;
+            else {
+                knownProps.set(name_2, prop);
+                deduped.push(prop);
+            }
+        }
+        return deduped;
     }
 
     var transformText = function (node, context) {
@@ -1774,6 +1867,15 @@ var Vue = (function (exports) {
                 }
             };
         }
+    };
+
+    var transformBind = function (dir, _node, context) {
+        console.log('dir', dir, _node, context);
+        var exp = dir.exp;
+        dir.arg;
+        return {
+            props: [createObjectProperty(exp, exp)]
+        };
     };
 
     var forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/;
@@ -1925,6 +2027,27 @@ var Vue = (function (exports) {
         return ret;
     }
 
+    var transformOn = function (dir, node, context) {
+        var exp = dir.exp;
+        var eventName;
+        if (exp.type === 4 /* NodeTypes.SIMPLE_EXPRESSION */) {
+            var rawName = exp.content;
+            var eventString = node.tagType !== 0 /* ElementTypes.ELEMENT */ ||
+                rawName.startsWith('vnode') ||
+                !/[A-Z]/.test(rawName)
+                ? // for non-element and vnode lifecycle event listeners, auto convert
+                    // it to camelCase. See issue #2249
+                    toHandlerKey(camelize(rawName))
+                : // preserve case for plain element listeners that have uppercase
+                    // letters, as these may be custom elements' custom events
+                    "on:".concat(rawName);
+            eventName = createSimpleExpression(eventString, true);
+        }
+        return {
+            props: [createObjectProperty(eventName, exp)]
+        };
+    };
+
     function baseCompile(template, options) {
         if (options === void 0) { options = {}; }
         var ast = baseParse(template.trim());
@@ -1934,8 +2057,12 @@ var Vue = (function (exports) {
                 transformText,
                 transformIf,
                 transformFor
-                // transformBind
-            ]
+                //
+            ],
+            directiveTransforms: {
+                bind: transformBind,
+                on: transformOn
+            }
         }));
         return generate(ast);
     }
@@ -2860,6 +2987,8 @@ var Vue = (function (exports) {
     exports.EMPTY_OBJ = EMPTY_OBJ;
     exports.Fragment = Fragment;
     exports.Text = Text;
+    exports.camelize = camelize;
+    exports.capitalize = capitalize;
     exports.compile = compileToFunction;
     exports.computed = computed;
     exports.createApp = createApp;
@@ -2881,6 +3010,7 @@ var Vue = (function (exports) {
     exports.render = render;
     exports.renderList = renderList;
     exports.toDisplayString = toDisplayString;
+    exports.toHandlerKey = toHandlerKey;
     exports.watch = watch;
     exports.watchEffect = watchEffect;
 

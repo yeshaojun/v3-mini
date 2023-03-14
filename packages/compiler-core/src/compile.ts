@@ -7,6 +7,7 @@ import { transformText } from './transforms/transformText'
 import { transformBind } from './transforms/vBind'
 import { transformFor } from './transforms/vFor'
 import { transformIf } from './transforms/vIf'
+import { transformOn } from './transforms/vOn'
 
 export function baseCompile(template: string, options = {}) {
   const ast = baseParse(template.trim())
@@ -22,7 +23,8 @@ export function baseCompile(template: string, options = {}) {
         //
       ],
       directiveTransforms: {
-        transformBind
+        bind: transformBind,
+        on: transformOn
       }
     })
   )
