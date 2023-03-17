@@ -6,12 +6,16 @@ import {
   ElementTypes,
   NodeTypes
 } from '../ast'
+import { isMemberExpressionBrowser } from '../utils'
+
+const fnExpRE =
+  /^\s*([\w$_]+|(async\s*)?\([^)]*?\))\s*(:[^=]+)?=>|^\s*(async\s+)?function(?:\s+[\w$]+)?\s*\(/
 
 export const transformOn = (dir, node, context) => {
-  const { exp } = dir
+  let { exp, arg } = dir
   let eventName
-  if (exp.type === NodeTypes.SIMPLE_EXPRESSION) {
-    let rawName = exp.content
+  if (arg.type === NodeTypes.SIMPLE_EXPRESSION) {
+    let rawName = arg.content
     const eventString =
       node.tagType !== ElementTypes.ELEMENT ||
       rawName.startsWith('vnode') ||
@@ -25,6 +29,25 @@ export const transformOn = (dir, node, context) => {
     eventName = createSimpleExpression(eventString, true)
   } else {
   }
+
+  if (exp) {
+    const isMemberExp = isMemberExpressionBrowser(exp.content)
+    const isInlineStatement = !(isMemberExp || fnExpRE.test(exp.content))
+    const hasMultipleStatements = exp.content.includes(`;`)
+    if (isInlineStatement) {
+      exp = createCompoundExpression(
+        [
+          `${isInlineStatement ? `$event` : `(...args)`} => ${
+            hasMultipleStatements ? `{` : `(`
+          }`,
+          exp,
+          hasMultipleStatements ? `}` : `)`
+        ],
+        undefined
+      )
+    }
+  }
+
   return {
     props: [createObjectProperty(eventName, exp)]
   }

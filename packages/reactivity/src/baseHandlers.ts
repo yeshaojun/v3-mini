@@ -7,6 +7,9 @@ const set = createSetter()
 
 function createGetter() {
   return function get(target: object, key: string | symbol, receiver: object) {
+    if (key === 'length') {
+      return (target as any).length
+    }
     const res = Reflect.get(target, key, receiver)
     track(target, key)
     if (isObject(res)) {
@@ -23,6 +26,9 @@ function createSetter() {
     value: unknown,
     receiver: object
   ) {
+    if (key === 'length') {
+      return (target as any).length
+    }
     const result = Reflect.set(target, key, value, receiver)
     trigger(target, key, value)
     return result

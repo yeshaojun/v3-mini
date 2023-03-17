@@ -1,4 +1,9 @@
-import { createVNodeCall, NodeTypes } from '../ast'
+import {
+  createObjectProperty,
+  createSimpleExpression,
+  createVNodeCall,
+  NodeTypes
+} from '../ast'
 import { createObjectExpression } from '../utils'
 
 export const transformElement = (node, context) => {
@@ -35,6 +40,13 @@ export function buildProps(node, context, props = node.props) {
   for (let i = 0; i < props.length; i++) {
     const prop = props[i]
     if (prop.type === NodeTypes.ATTRIBUTE) {
+      const { name, value } = prop
+      properties.push(
+        createObjectProperty(
+          createSimpleExpression(name, true),
+          createSimpleExpression(value ? value.content : '', true)
+        )
+      )
     } else {
       const { name, exp } = prop
       const isVBind = name === 'bind'

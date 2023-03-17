@@ -103,7 +103,8 @@ function applyOptions(instance: any) {
     beforeCreate,
     created,
     beforeMount,
-    mounted
+    mounted,
+    methods
   } = instance.type
 
   // hooks
@@ -122,6 +123,15 @@ function applyOptions(instance: any) {
     }
   }
 
+  if (methods) {
+    for (const key in methods) {
+      const methodHandler = methods[key]
+      if (isFunction(methodHandler)) {
+        instance.data[key] = methodHandler.bind(instance.data)
+      }
+    }
+  }
+
   // hooks
   if (created) {
     callHook(created, instance.data)
@@ -131,6 +141,7 @@ function applyOptions(instance: any) {
     register(hook?.bind(instance.data), instance)
   }
 
+  console.log('data', instance.data)
   // 注册 hooks
   registerLifecycleHook(onBeforeMount, beforeMount)
   registerLifecycleHook(onMounted, mounted)

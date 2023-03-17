@@ -1,5 +1,6 @@
 import { isArray, isFunction, isObject, isString } from '@vue/shared'
 import { normalizeClass } from 'packages/shared/src/normalizeProps'
+import { PatchFlags } from 'packages/shared/src/patchFlags'
 import { ShapeFlags } from 'packages/shared/src/shapeFlags'
 
 export const Fragment = Symbol('Fragment')
@@ -16,9 +17,10 @@ export interface VNode {
   props: any
   children: any
   shapeFlag: number
+  patchFlag: number
 }
 
-export function createVNode(type, props, children?): VNode {
+export function createVNode(type, props, children?, patchFlag = 0): VNode {
   // type是组件？
   // 暂不考虑
   // 通过 bit 位处理 shapeFlag 类型
@@ -35,7 +37,7 @@ export function createVNode(type, props, children?): VNode {
       props.class = normalizeClass(klass)
     }
   }
-  return createBaseVNode(type, props, children, shapeFlag)
+  return createBaseVNode(type, props, children, patchFlag, shapeFlag)
 }
 
 export { createVNode as createElementVNode }
@@ -43,13 +45,14 @@ export { createVNode as createElementVNode }
 /**
  * 构建基础 vnode
  */
-function createBaseVNode(type, props, children, shapeFlag) {
+function createBaseVNode(type, props, children, patchFlag = 0, shapeFlag) {
   const vnode = {
     __v_isVNode: true,
     type,
     props,
     shapeFlag,
-    key: props?.key || null
+    key: props?.key || null,
+    patchFlag
   } as VNode
 
   normalizeChildren(vnode, children)
@@ -75,7 +78,7 @@ export function normalizeChildren(vnode: VNode, children: unknown) {
       }
       return
     } else {
-      // type = ShapeFlags.SLOTS_CHILDREN
+      type = ShapeFlags.SLOTS_CHILDREN
       // const slotFlag = children._
     }
   } else if (isFunction(children)) {

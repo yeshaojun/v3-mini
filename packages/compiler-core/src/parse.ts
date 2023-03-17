@@ -1,4 +1,4 @@
-import { ElementTypes, NodeTypes } from './ast'
+import { ConstantTypes, ElementTypes, NodeTypes } from './ast'
 
 /**
  * 解析器上下文
@@ -227,7 +227,7 @@ function parseAttribute(context: ParserContext, nameSet: Set<string>) {
     advanceSpaces(context)
     value = parseAttributeValue(context)
   }
-
+  let arg: any = undefined
   // 针对 v- 的指令处理
   if (/^(v-[A-Za-z0-9-]|:|\.|@|#)/.test(name)) {
     // 获取指令名称
@@ -241,6 +241,19 @@ function parseAttribute(context: ParserContext, nameSet: Set<string>) {
       match[1] ||
       (startsWith(name, ':') ? 'bind' : startsWith(name, '@') ? 'on' : 'slot')
     // TODO：指令参数  v-bind:arg
+    let content = match[2]
+    let isStatic = true
+    if (match[2]) {
+      arg = {
+        type: NodeTypes.SIMPLE_EXPRESSION,
+        content,
+        isStatic,
+        constType: isStatic
+          ? ConstantTypes.CAN_STRINGIFY
+          : ConstantTypes.NOT_CONSTANT,
+        loc: {}
+      }
+    }
     // let arg: any
 
     // TODO：指令修饰符  v-on:click.modifiers
@@ -255,7 +268,7 @@ function parseAttribute(context: ParserContext, nameSet: Set<string>) {
         isStatic: false,
         loc: value.loc
       },
-      arg: undefined,
+      arg: arg,
       modifiers: undefined,
       loc: {}
     }

@@ -266,6 +266,9 @@ var Vue = (function (exports) {
     var set = createSetter();
     function createGetter() {
         return function get(target, key, receiver) {
+            if (key === 'length') {
+                return target.length;
+            }
             var res = Reflect.get(target, key, receiver);
             track(target, key);
             if (isObject(res)) {
@@ -276,6 +279,9 @@ var Vue = (function (exports) {
     }
     function createSetter() {
         return function set(target, key, value, receiver) {
+            if (key === 'length') {
+                return target.length;
+            }
             var result = Reflect.set(target, key, value, receiver);
             trigger(target, key);
             return result;
@@ -593,7 +599,8 @@ var Vue = (function (exports) {
     var Fragment = Symbol('Fragment');
     var Text = Symbol('Text');
     var Comment = Symbol('Comment');
-    function createVNode(type, props, children) {
+    function createVNode(type, props, children, patchFlag) {
+        if (patchFlag === void 0) { patchFlag = 0; }
         // type是组件？
         // 暂不考虑
         // 通过 bit 位处理 shapeFlag 类型
@@ -609,18 +616,20 @@ var Vue = (function (exports) {
                 props.class = normalizeClass(klass);
             }
         }
-        return createBaseVNode(type, props, children, shapeFlag);
+        return createBaseVNode(type, props, children, patchFlag, shapeFlag);
     }
     /**
      * 构建基础 vnode
      */
-    function createBaseVNode(type, props, children, shapeFlag) {
+    function createBaseVNode(type, props, children, patchFlag, shapeFlag) {
+        if (patchFlag === void 0) { patchFlag = 0; }
         var vnode = {
             __v_isVNode: true,
             type: type,
             props: props,
             shapeFlag: shapeFlag,
-            key: (props === null || props === void 0 ? void 0 : props.key) || null
+            key: (props === null || props === void 0 ? void 0 : props.key) || null,
+            patchFlag: patchFlag
         };
         normalizeChildren(vnode, children);
         return vnode;
@@ -645,6 +654,10 @@ var Vue = (function (exports) {
                     slot._c && (slot._d = true);
                 }
                 return;
+            }
+            else {
+                type = 32 /* ShapeFlags.SLOTS_CHILDREN */;
+                // const slotFlag = children._
             }
         }
         else if (isFunction(children)) {
@@ -803,6 +816,79 @@ var Vue = (function (exports) {
     var nonIdentifierRE = /^\d|[^\$\w]/;
     var isSimpleIdentifier = function (name) {
         return !nonIdentifierRE.test(name);
+    };
+    var validFirstIdentCharRE = /[A-Za-z_$\xA0-\uFFFF]/;
+    var validIdentCharRE = /[\.\?\w$\xA0-\uFFFF]/;
+    var whitespaceRE = /\s+[.[]\s*|\s*[.[]\s+/g;
+    var isMemberExpressionBrowser = function (path) {
+        // remove whitespaces around . or [ first
+        path = path.trim().replace(whitespaceRE, function (s) { return s.trim(); });
+        var state = 0 /* MemberExpLexState.inMemberExp */;
+        var stateStack = [];
+        var currentOpenBracketCount = 0;
+        var currentOpenParensCount = 0;
+        var currentStringType = null;
+        for (var i = 0; i < path.length; i++) {
+            var char = path.charAt(i);
+            switch (state) {
+                case 0 /* MemberExpLexState.inMemberExp */:
+                    if (char === '[') {
+                        stateStack.push(state);
+                        state = 1 /* MemberExpLexState.inBrackets */;
+                        currentOpenBracketCount++;
+                    }
+                    else if (char === '(') {
+                        stateStack.push(state);
+                        state = 2 /* MemberExpLexState.inParens */;
+                        currentOpenParensCount++;
+                    }
+                    else if (!(i === 0 ? validFirstIdentCharRE : validIdentCharRE).test(char)) {
+                        return false;
+                    }
+                    break;
+                case 1 /* MemberExpLexState.inBrackets */:
+                    if (char === "'" || char === "\"" || char === '`') {
+                        stateStack.push(state);
+                        state = 3 /* MemberExpLexState.inString */;
+                        currentStringType = char;
+                    }
+                    else if (char === "[") {
+                        currentOpenBracketCount++;
+                    }
+                    else if (char === "]") {
+                        if (!--currentOpenBracketCount) {
+                            state = stateStack.pop();
+                        }
+                    }
+                    break;
+                case 2 /* MemberExpLexState.inParens */:
+                    if (char === "'" || char === "\"" || char === '`') {
+                        stateStack.push(state);
+                        state = 3 /* MemberExpLexState.inString */;
+                        currentStringType = char;
+                    }
+                    else if (char === "(") {
+                        currentOpenParensCount++;
+                    }
+                    else if (char === ")") {
+                        // if the exp ends as a call then it should not be considered valid
+                        if (i === path.length - 1) {
+                            return false;
+                        }
+                        if (!--currentOpenParensCount) {
+                            state = stateStack.pop();
+                        }
+                    }
+                    break;
+                case 3 /* MemberExpLexState.inString */:
+                    if (char === currentStringType) {
+                        state = stateStack.pop();
+                        currentStringType = null;
+                    }
+                    break;
+            }
+        }
+        return !currentOpenBracketCount && !currentOpenParensCount;
     };
 
     var aliasHelper = function (s) { return "".concat(helperNameMap[s], ": _").concat(helperNameMap[s]); };
@@ -1349,6 +1435,7 @@ var Vue = (function (exports) {
             advanceSpaces(context);
             value = parseAttributeValue(context);
         }
+        var arg = undefined;
         // 针对 v- 的指令处理
         if (/^(v-[A-Za-z0-9-]|:|\.|@|#)/.test(name)) {
             // 获取指令名称
@@ -1357,6 +1444,19 @@ var Vue = (function (exports) {
             var dirName = match_1[1] ||
                 (startsWith(name, ':') ? 'bind' : startsWith(name, '@') ? 'on' : 'slot');
             // TODO：指令参数  v-bind:arg
+            var content = match_1[2];
+            var isStatic = true;
+            if (match_1[2]) {
+                arg = {
+                    type: 4 /* NodeTypes.SIMPLE_EXPRESSION */,
+                    content: content,
+                    isStatic: isStatic,
+                    constType: isStatic
+                        ? 3 /* ConstantTypes.CAN_STRINGIFY */
+                        : 0 /* ConstantTypes.NOT_CONSTANT */,
+                    loc: {}
+                };
+            }
             // let arg: any
             // TODO：指令修饰符  v-on:click.modifiers
             // const modifiers = match[3] ? match[3].slice(1).split('.') : []
@@ -1369,7 +1469,7 @@ var Vue = (function (exports) {
                     isStatic: false,
                     loc: value.loc
                 },
-                arg: undefined,
+                arg: arg,
                 modifiers: undefined,
                 loc: {}
             };
@@ -1795,10 +1895,13 @@ var Vue = (function (exports) {
         var properties = [];
         for (var i = 0; i < props.length; i++) {
             var prop = props[i];
-            if (prop.type === 6 /* NodeTypes.ATTRIBUTE */) ;
+            if (prop.type === 6 /* NodeTypes.ATTRIBUTE */) {
+                var name_1 = prop.name, value = prop.value;
+                properties.push(createObjectProperty(createSimpleExpression(name_1, true), createSimpleExpression(value ? value.content : '', true)));
+            }
             else {
-                var name_1 = prop.name; prop.exp;
-                var directiveTransform = context.directiveTransforms[name_1];
+                var name_2 = prop.name; prop.exp;
+                var directiveTransform = context.directiveTransforms[name_2];
                 console.log('node', directiveTransform);
                 if (directiveTransform) {
                     var props_1 = directiveTransform(prop, node, context).props;
@@ -1817,11 +1920,11 @@ var Vue = (function (exports) {
         var deduped = [];
         for (var i = 0; i < properties.length; i++) {
             var prop = properties[i];
-            var name_2 = prop.key.content;
-            var existing = knownProps.get(name_2);
+            var name_3 = prop.key.content;
+            var existing = knownProps.get(name_3);
             if (existing) ;
             else {
-                knownProps.set(name_2, prop);
+                knownProps.set(name_3, prop);
                 deduped.push(prop);
             }
         }
@@ -1872,9 +1975,9 @@ var Vue = (function (exports) {
     var transformBind = function (dir, _node, context) {
         console.log('dir', dir, _node, context);
         var exp = dir.exp;
-        dir.arg;
+        var arg = dir.arg;
         return {
-            props: [createObjectProperty(exp, exp)]
+            props: [createObjectProperty(arg, exp)]
         };
     };
 
@@ -2027,11 +2130,12 @@ var Vue = (function (exports) {
         return ret;
     }
 
+    var fnExpRE = /^\s*([\w$_]+|(async\s*)?\([^)]*?\))\s*(:[^=]+)?=>|^\s*(async\s+)?function(?:\s+[\w$]+)?\s*\(/;
     var transformOn = function (dir, node, context) {
-        var exp = dir.exp;
+        var exp = dir.exp, arg = dir.arg;
         var eventName;
-        if (exp.type === 4 /* NodeTypes.SIMPLE_EXPRESSION */) {
-            var rawName = exp.content;
+        if (arg.type === 4 /* NodeTypes.SIMPLE_EXPRESSION */) {
+            var rawName = arg.content;
             var eventString = node.tagType !== 0 /* ElementTypes.ELEMENT */ ||
                 rawName.startsWith('vnode') ||
                 !/[A-Z]/.test(rawName)
@@ -2042,6 +2146,18 @@ var Vue = (function (exports) {
                     // letters, as these may be custom elements' custom events
                     "on:".concat(rawName);
             eventName = createSimpleExpression(eventString, true);
+        }
+        if (exp) {
+            var isMemberExp = isMemberExpressionBrowser(exp.content);
+            var isInlineStatement = !(isMemberExp || fnExpRE.test(exp.content));
+            var hasMultipleStatements = exp.content.includes(";");
+            if (isInlineStatement) {
+                exp = createCompoundExpression([
+                    "".concat(isInlineStatement ? "$event" : "(...args)", " => ").concat(hasMultipleStatements ? "{" : "("),
+                    exp,
+                    hasMultipleStatements ? "}" : ")"
+                ], undefined);
+            }
         }
         return {
             props: [createObjectProperty(eventName, exp)]
@@ -2173,7 +2289,7 @@ var Vue = (function (exports) {
         applyOptions(instance);
     }
     function applyOptions(instance) {
-        var _a = instance.type, dataOptions = _a.data, beforeCreate = _a.beforeCreate, created = _a.created, beforeMount = _a.beforeMount, mounted = _a.mounted;
+        var _a = instance.type, dataOptions = _a.data, beforeCreate = _a.beforeCreate, created = _a.created, beforeMount = _a.beforeMount, mounted = _a.mounted, methods = _a.methods;
         // hooks
         if (beforeCreate) {
             callHook(beforeCreate, instance.data);
@@ -2188,6 +2304,14 @@ var Vue = (function (exports) {
                 instance.data = reactive(data);
             }
         }
+        if (methods) {
+            for (var key in methods) {
+                var methodHandler = methods[key];
+                if (isFunction(methodHandler)) {
+                    instance.data[key] = methodHandler.bind(instance.data);
+                }
+            }
+        }
         // hooks
         if (created) {
             callHook(created, instance.data);
@@ -2195,6 +2319,7 @@ var Vue = (function (exports) {
         function registerLifecycleHook(register, hook) {
             register(hook === null || hook === void 0 ? void 0 : hook.bind(instance.data), instance);
         }
+        console.log('data', instance.data);
         // 注册 hooks
         registerLifecycleHook(onBeforeMount, beforeMount);
         registerLifecycleHook(onMounted, mounted);
@@ -2253,9 +2378,20 @@ var Vue = (function (exports) {
          */
         var patchElement = function (oldVNode, newVNode) {
             var el = (newVNode.el = oldVNode.el);
+            newVNode.patchFlag;
             // 新旧 props
-            oldVNode.props || EMPTY_OBJ;
-            newVNode.props || EMPTY_OBJ;
+            var oldProps = oldVNode.props || EMPTY_OBJ;
+            var newProps = newVNode.props || EMPTY_OBJ;
+            var propsToUpdate = Object.keys(newVNode.props);
+            for (var i = 0; i < propsToUpdate.length; i++) {
+                var key = propsToUpdate[i];
+                var prev = oldProps[key];
+                var next = newProps[key];
+                // #1471 force patch value
+                if (next !== prev || key === 'value') {
+                    hostPatchProp(el, key, prev, next);
+                }
+            }
             // 更新子节点
             patchChildren(oldVNode, newVNode, el, null);
         };
@@ -2888,7 +3024,7 @@ var Vue = (function (exports) {
      */
     function createInvoker(initialValue) {
         var invoker = function (e) {
-            invoker.value && invoker.value();
+            invoker.value && invoker.value(e);
         };
         // value 为真实的事件行为
         invoker.value = initialValue;

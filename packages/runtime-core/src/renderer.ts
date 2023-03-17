@@ -10,6 +10,7 @@ import { createComponentInstance, setupComponent } from './component'
 import { ReactiveEffect } from 'packages/reactivity/src/effect'
 import { queuePreFlushCb } from './scheduler'
 import { createAppAPI } from './apiCreateApp'
+import { PatchFlags } from 'packages/shared/src/patchFlags'
 
 export interface RendererOptions {
   /**
@@ -83,10 +84,22 @@ function baseCreateRenderer(options: RendererOptions) {
    */
   const patchElement = (oldVNode, newVNode) => {
     const el = (newVNode.el = oldVNode.el!)
+    let { patchFlag } = newVNode
+
     // 新旧 props
     const oldProps = oldVNode.props || EMPTY_OBJ
     const newProps = newVNode.props || EMPTY_OBJ
 
+    const propsToUpdate = Object.keys(newVNode.props)
+    for (let i = 0; i < propsToUpdate.length; i++) {
+      const key = propsToUpdate[i]
+      const prev = oldProps[key]
+      const next = newProps[key]
+      // #1471 force patch value
+      if (next !== prev || key === 'value') {
+        hostPatchProp(el, key, prev, next)
+      }
+    }
     // 更新子节点
     patchChildren(oldVNode, newVNode, el, null)
   }
@@ -607,3 +620,5 @@ function getSequence(arr: number[]): number[] {
   }
   return result
 }
+
+const patchProps = (el, vnode, oldProps, newProps) => {}

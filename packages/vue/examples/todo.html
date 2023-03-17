@@ -10,15 +10,14 @@
   <body>
     <div id="app">
       <header>
-        <h1>{{msg}}</h1>
-        <input type="text" v-model="todo" />
-        <button @click="add">add todo</button>
+        <input type="text" :value="todo" @input="input"></input>
       </header>
       <main>
+        <button @click="add">add todo</button>
         <ul>
-          <li v-for="(item, index) in list" :key="item.id">
+          <li v-for="item in list" :key="item">
             {{ item.name }}
-            <button @click="remove(index)">remove todo</button>
+            <button @click="remove(item.id)">remove</button>
           </li>
         </ul>
       </main>
@@ -28,31 +27,28 @@
       const APP = {
         data() {
           return {
-            list: [],
-            todo: ""
+            list: [{
+              name: "吃饭",
+                id: 1
+            }],
+            todo: "早秋"
           }
         },
-        setup(props) {
-            const msg = Vue.ref('hello')
-            return {
-                msg
-            }
-        },
-        mounted() {
-            this.list = [{
-                name: "吃饭",
-                id: 1
-            }]
-        },
         methods: {
-            add() {
-                this.list.push({
-                    name: this.todo,
-                    id: this.list[this.list.length -1].id ++ 
-                })
+          add() {
+              this.list.push({
+                  name: this.todo,
+                  id: new Date().getTime()
+              })
+              this.todo = ''
             },
-            remove(index) {
-               this.list.splice(index, 1)
+            input(e) {
+              this.todo = e.target.value
+            },
+            remove(id) {
+              const index = this.list.findIndex(item => item.id == id);
+              this.list.splice(index, 1)
+              console.log('id', id, index, this.list)
             }
         },
       }

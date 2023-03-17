@@ -155,3 +155,10 @@ export function createFunctionExpression(
     loc
   }
 }
+
+export const enum ConstantTypes {
+  NOT_CONSTANT = 0,
+  CAN_SKIP_PATCH,
+  CAN_HOIST,
+  CAN_STRINGIFY
+}

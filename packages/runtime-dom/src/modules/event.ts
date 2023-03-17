@@ -39,7 +39,7 @@ function parseName(name: string) {
  */
 function createInvoker(initialValue) {
   const invoker = (e: Event) => {
-    invoker.value && invoker.value()
+    invoker.value && invoker.value(e)
   }
   // value 为真实的事件行为
   invoker.value = initialValue
