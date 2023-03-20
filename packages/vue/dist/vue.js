@@ -266,9 +266,6 @@ var Vue = (function (exports) {
     var set = createSetter();
     function createGetter() {
         return function get(target, key, receiver) {
-            if (key === 'length') {
-                return target.length;
-            }
             var res = Reflect.get(target, key, receiver);
             track(target, key);
             if (isObject(res)) {
@@ -279,20 +276,23 @@ var Vue = (function (exports) {
     }
     function createSetter() {
         return function set(target, key, value, receiver) {
-            if (key === 'length') {
-                return target.length;
-            }
             var result = Reflect.set(target, key, value, receiver);
             trigger(target, key);
             return result;
         };
     }
+    function deleteProperty(target, key) {
+        // const oldValue = (target as any)[key]
+        var result = Reflect.deleteProperty(target, key);
+        if (result) {
+            trigger(target, key);
+        }
+        return result;
+    }
     var mutableHandlers = {
         get: get,
-        set: set
-        //   deleteProperty,
-        //   has,
-        //   ownKeys
+        set: set,
+        deleteProperty: deleteProperty
     };
 
     var reactiveMap = new WeakMap();
