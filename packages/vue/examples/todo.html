@@ -31,7 +31,7 @@
               name: "吃饭",
                 id: 1
             }],
-            todo: "早秋"
+            todo: ""
           }
         },
         methods: {
@@ -49,6 +49,9 @@
               const index = this.list.findIndex(item => item.id == id);
               this.list.splice(index, 1)
             }
+        },
+        mounted() {
+          this.todo = 'init todo'
         },
       }
       const app = createApp(APP)
