@@ -4,4 +4,5 @@
 
 详情可查看下列文档
 
-vue3 源码系列 1 [为什么建议你读一读 vue3 源码？](https://github.com/yeshaojun/v3-mini/blob/master/lesson1.md)
+**vue3 源码系列 1** [为什么建议你读一读 vue3 源码？](https://github.com/yeshaojun/v3-mini/blob/master/lesson1.md)
+**vue3 源码系列 2** [vue 是如何把模板渲染成真实 dom 的?](https://github.com/yeshaojun/v3-mini/blob/master/lesson2.md)
