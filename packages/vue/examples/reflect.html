@@ -17,6 +17,7 @@
         }, {
             get: (target, key, receiver) => {
                 console.log('get', key)
+                // return target[key]
                 return Reflect.get(target, key, receiver)
             }
         })
