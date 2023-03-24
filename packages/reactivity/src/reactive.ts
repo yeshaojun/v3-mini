@@ -21,6 +21,7 @@ function createReactiveObject(
     console.warn(`value cannot be made reactive: ${String(target)}`)
     return target
   }
+  // 做个缓存
   const existingProxy = proxyMap.get(target)
   if (existingProxy) {
     return existingProxy

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <script>
+      const isObject = val => val !== null && typeof val === 'object'
+      function reactive(target) {
+        if (!isObject(target)) {
+          console.warn(`数据必须是对象: ${String(target)}`)
+          return target
+        }
+
+        const proxy = new Proxy(target, {
+          get: (target, key, receiver) => {
+            const res = Reflect.get(target, key, receiver)
+            track(target, key)
+            // 这句很关键，不然嵌套数据，里面的不会响应
+            if (isObject(res)) {
+              return reactive(res)
+            }
+            return res
+          },
+          set: (target, key, value, receiver) => {
+            const result = Reflect.set(target, key, value, receiver)
+            trigger(target, key, value)
+            return result
+          },
+          deleteProperty: () => {
+            const result = Reflect.deleteProperty(target, key)
+            return result
+          }
+        })
+        return proxy
+      }
+
+      function ref(value) {
+        return new RefImpl(value)
+      }
+
+      class RefImpl {
+        constructor(value) {
+          this._value = isObject(value) ? reactive(value) : value
+          this._rawValue = value
+        }
+        get value() {
+          return this._value
+        }
+
+        set value(newVal) {
+          if (!Object.is(newVal, this._rawValue)) {
+            // 更新原始数据
+            this._rawValue = newVal
+            // 更新 .value 的值
+            this._value = isObject(newVal) ? reactive(newVal) : value
+          }
+        }
+      }
+      
+      
+      let activeEffect = null
+      const targetMap = new WeakMap()
+      // 依赖收集/触发
+      function track(target, key) {
+        let depsMap = targetMap.get(target)
+        if (!depsMap) {
+          targetMap.set(target, (depsMap = new Map()))
+        }
+        let dep = depsMap.get(key)
+        if (!dep) {
+          dep = new Set()
+        }
+        dep.add(activeEffect)
+        depsMap.set(key, dep)
+      }
+
+      function trigger(target, key, value) {
+        const depsMap = targetMap.get(target)
+        if (!depsMap) {
+          return
+        }
+        const deps = depsMap.get(key)
+        if (!deps) {
+          return
+        }
+
+        deps.forEach(effectFn => {
+          if (effectFn.scheduler) {
+            effectFn.scheduler()
+          } else {
+            effectFn()
+          }
+        })
+      }
+
+      function effect(fn,options = {}) {
+        const effectFn = () => {
+          try {
+            activeEffect = effectFn
+            return fn()
+          } catch (error) {
+            activeEffect = null
+          }
+        }
+        if (!options.lazy) {
+          effectFn()
+        }
+        effectFn.scheduler = options.scheduler
+        return effectFn
+      }
+
+      const person = reactive({
+        name: "hello world"
+      })
+      effect(() => {
+        console.log('effect person', person.name)
+      })
+
+      setTimeout(() => {
+        person.name = 'setTimeout world'
+      }, 2000)
+    </script>
+  </body>
+</html>

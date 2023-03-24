@@ -1,5 +1,3 @@
-export * from './toDisplayString'
-
 const cacheStringFunction = <T extends (str: string) => string>(fn: T): T => {
   const cache: Record<string, string> = Object.create(null)
   return ((str: string) => {
