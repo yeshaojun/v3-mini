@@ -215,6 +215,9 @@ var Vue = (function (exports) {
             // 执行 run 函数
             _effect.run();
         }
+        var runner = _effect.run.bind(_effect);
+        runner.effect = _effect;
+        return runner;
     }
     var ReactiveEffect = /** @class */ (function () {
         function ReactiveEffect(fn, scheduler) {

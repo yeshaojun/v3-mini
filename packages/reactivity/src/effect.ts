@@ -82,6 +82,9 @@ export function effect<T = any>(fn: () => T, options?: ReactiveEffectOptions) {
     // 执行 run 函数
     _effect.run()
   }
+  const runner: any = _effect.run.bind(_effect)
+  runner.effect = _effect
+  return runner
 }
 
 export class ReactiveEffect<T = any> {
