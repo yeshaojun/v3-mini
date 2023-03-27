@@ -5,4 +5,7 @@
 详情可查看下列文档
 
 **vue3 源码系列 1** [阅读 vue 源码，应该从哪入手？](https://github.com/yeshaojun/v3-mini/blob/master/lesson1.md)
+
 **vue3 源码系列 2** [vue 是如何把模板渲染成真实 dom 的?](https://github.com/yeshaojun/v3-mini/blob/master/lesson2.md)
+
+**vue3 源码系列 2** [vue 如何处理响应式数据?](https://github.com/yeshaojun/v3-mini/blob/master/lesson3.md)
