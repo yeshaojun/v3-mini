@@ -118,6 +118,10 @@
       })
       effect(() => {
         console.log('effect person', person.name)
+      }, {
+        scheduler: () => {
+          console.log('scheduler')
+        }
       })
 
       setTimeout(() => {
