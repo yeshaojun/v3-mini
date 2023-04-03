@@ -12,26 +12,26 @@
     </div>
     <script src="../dist/vue.js"></script>
     <script>
-      const { reactive, computed, effect } = Vue
-
-      const person = reactive({
-        firstname: 'zhang',
-        lastname: 'xx'
+    const { reactive, effect, ref, computed } = Vue
+  
+      const obj = reactive({
+        name: '张三'
       })
 
-      const personInfo = computed(() => {
+      // C1
+      const computedObj = computed(() => {
         console.log('computed')
-        return person.firstname + person.lastname
+        return '姓名：' + obj.name
       })
 
+      // e1
       effect(() => {
-        document.querySelector('#app').innerHTML = personInfo.value
-        document.querySelector('#app').innerHTML = personInfo.value
+        document.querySelector('#app').innerHTML = computedObj.value
+        document.querySelector('#app').innerHTML = computedObj.value
       })
 
       setTimeout(() => {
-        person.firstname ='li'
-        person.lastname ='si'
+        obj.name = '李四'
       }, 2000)
 
     </script>
