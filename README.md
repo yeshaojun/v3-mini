@@ -11,3 +11,5 @@
 **vue3 源码系列 3** [vue 如何处理响应式数据?](https://github.com/yeshaojun/v3-mini/blob/master/lesson3.md)
 
 **vue3 源码系列 4** [computed 是如何实现，值改变的时候重新计算的？](https://github.com/yeshaojun/v3-mini/blob/master/lesson4.md)
+
+**vue3 源码系列 5** [computed 多次访问，为什么会有死循环？](https://github.com/yeshaojun/v3-mini/blob/master/lesson5.md)
